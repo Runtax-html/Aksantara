@@ -5,6 +5,7 @@ import CanvasTracing from '@/Components/CanvasTracing.vue';
 import CanvasModal from '@/Components/CanvasModal.vue';
 import VirtualKeyboard from '@/Components/VirtualKeyboard.vue';
 import SpeechPronunciation from '@/Components/SpeechPronunciation.vue';
+import QuizModal from '@/Components/QuizModal.vue';
 
 const props = defineProps({
     userProgress: {
@@ -29,6 +30,44 @@ function openModalForChar(item) {
 }
 
 function handleXpGained(amount) {
+    userXP.value += amount;
+}
+
+// QuizModal State
+const showQuizModal = ref(false);
+const quizLevelId = ref(1);
+const quizLevelTitle = ref('');
+
+function openQuizForLevel(level) {
+    if (level.status === 'locked') return;
+    quizLevelId.value = level.id;
+    quizLevelTitle.value = level.title;
+    showQuizModal.value = true;
+}
+
+function handleLevelCompleted(result) {
+    // Update the level that was just completed
+    const completedLevel = defaultLevels.value.find(l => l.id === result.levelId);
+    if (completedLevel) {
+        completedLevel.status = 'completed';
+        completedLevel.stars = Math.max(completedLevel.stars, result.stars);
+        completedLevel.icon = '⭐';
+        completedLevel.color = 'from-emerald-400 to-green-500';
+    }
+
+    // Unlock the next level
+    const nextLevel = defaultLevels.value.find(l => l.id === result.levelId + 1);
+    if (nextLevel && nextLevel.status === 'locked') {
+        nextLevel.status = 'active';
+        nextLevel.icon = '🚀';
+        nextLevel.color = 'from-[#FF4D30] to-orange-500';
+    }
+
+    // Update "X / 6 Selesai" counter
+    completedLevelsCount.value = defaultLevels.value.filter(l => l.status === 'completed').length;
+}
+
+function handleQuizXpGained(amount) {
     userXP.value += amount;
 }
 
@@ -74,12 +113,12 @@ const sundaGrid = [
     { char: 'ᮠ', latin: 'Ha', category: 'Ngalagena' },
 ];
 
-// Level Nodes Data (Khusus Aksara Sunda)
-const defaultLevels = [
+// Level Nodes Data (Khusus Aksara Sunda) — reactive so we can unlock levels dynamically
+const defaultLevels = ref([
     {
         id: 1,
         title: 'Level 1: Swara Aksara Sunda',
-        subtitle: 'a, i, u, e, o, eup, eu',
+        subtitle: 'a, i, u, é, o, e, eu',
         status: 'completed',
         stars: 3,
         icon: '⭐',
@@ -105,7 +144,7 @@ const defaultLevels = [
     },
     {
         id: 4,
-        title: 'Level 4: Rarangken Vokal',
+        title: 'Level 4: Rarangkén Vokal',
         subtitle: 'Panghulu, Pamepet, Paneuleung',
         status: 'locked',
         stars: 0,
@@ -130,11 +169,13 @@ const defaultLevels = [
         icon: '👑🔒',
         color: 'from-amber-400 to-yellow-500',
     },
-];
+]);
+
+const completedLevelsCount = ref(defaultLevels.value.filter(l => l.status === 'completed').length);
 
 const levels = computed(() => {
     if (props.userProgress && props.userProgress.length > 0) {
-        return defaultLevels.map(level => {
+        return defaultLevels.value.map(level => {
             const prog = props.userProgress.find(p => p.character_id === level.id);
             if (prog) {
                 return {
@@ -145,7 +186,7 @@ const levels = computed(() => {
             return level;
         });
     }
-    return defaultLevels;
+    return defaultLevels.value;
 });
 
 // Cerita Rakyat Sunda Data
@@ -198,7 +239,7 @@ const sundaFolktales = [
 
 function startLevel(level) {
     if (level.status !== 'locked') {
-        openModalForChar({ char: 'ᮊ', latin: 'Ka' });
+        openQuizForLevel(level);
     }
 }
 </script>
@@ -364,7 +405,7 @@ function startLevel(level) {
                                     <p class="text-xs text-gray-600 font-semibold mt-0.5">Selesaikan tiap level untuk menjadi Jawara Aksara Sunda!</p>
                                 </div>
                                 <span class="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-xl border border-emerald-300 shrink-0">
-                                    🌟 1 / 6 Selesai
+                                    🌟 {{ completedLevelsCount }} / 6 Selesai
                                 </span>
                             </div>
 
@@ -393,7 +434,7 @@ function startLevel(level) {
                                             </span>
 
                                             <span v-if="level.status === 'completed'" class="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[11px] font-extrabold rounded-xl border border-emerald-200">
-                                                Selesai ⭐⭐⭐
+                                                Selesai ✅
                                             </span>
                                             <span v-else-if="level.status === 'active'" class="px-2.5 py-0.5 bg-[#FF4D30] text-white text-[11px] font-extrabold rounded-xl animate-bounce">
                                                 Mulai! 🚀
@@ -415,15 +456,18 @@ function startLevel(level) {
                                                 @click="startLevel(level)"
                                                 class="w-full py-2 bg-[#FF4D30] hover:bg-[#e03e22] text-white text-xs font-extrabold rounded-xl border-b-4 border-orange-700 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all cursor-pointer"
                                             >
-                                                Latihan Nulis ✏️
+                                                Mulai Kuis 📝
                                             </button>
                                         </div>
-                                        <div v-else-if="level.status === 'completed'" class="mt-3">
+                                        <div v-else-if="level.status === 'completed'" class="mt-3 space-y-1.5">
+                                            <div class="flex items-center justify-center gap-0.5">
+                                                <span v-for="s in 3" :key="s" class="text-sm" :class="s <= level.stars ? '' : 'grayscale opacity-30'">⭐</span>
+                                            </div>
                                             <button
                                                 @click="startLevel(level)"
                                                 class="w-full py-1.5 bg-emerald-50 text-emerald-700 border-2 border-emerald-200 border-b-4 text-xs font-extrabold rounded-xl hover:bg-emerald-100 active:translate-y-0.5 transition-all cursor-pointer"
                                             >
-                                                Ulangi Level 🔄
+                                                Ulangi Kuis 🔄
                                             </button>
                                         </div>
                                     </div>
@@ -576,9 +620,6 @@ function startLevel(level) {
 
                     <VirtualKeyboard />
                 </div>
-
-                <!-- Speech Pronunciation Standalone -->
-                <SpeechPronunciation />
             </div>
 
             <!-- =================================================== -->
@@ -705,6 +746,18 @@ function startLevel(level) {
             :latin="selectedCanvasLatin"
             @close="showCanvasModal = false"
             @xpGained="handleXpGained"
+        />
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 6. QUIZ MODAL POPUP                                    -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <QuizModal
+            :show="showQuizModal"
+            :levelId="quizLevelId"
+            :levelTitle="quizLevelTitle"
+            @close="showQuizModal = false"
+            @levelCompleted="handleLevelCompleted"
+            @xpGained="handleQuizXpGained"
         />
 
     </div>
