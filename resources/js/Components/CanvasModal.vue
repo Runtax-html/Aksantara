@@ -18,6 +18,28 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'xpGained']);
 
+// ─── DICTIONARY CONFIG HURUF (CHARACTER_CONFIGS) ───
+const CHARACTER_CONFIGS = {
+    'ᮃ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
+    'ᮄ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
+    'ᮅ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
+    'ᮈ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
+    'ᮇ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
+    'ᮊ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮌ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮎ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮏ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮓ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮔ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮕ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮘ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮙ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮞ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    'ᮠ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+};
+
+const DEFAULT_CONFIG = { fontSize: 130, strokeWidth: 28, offsetY: 0 };
+
 // Tab state: 'guide' | 'practice'
 const activeTab = ref('guide');
 
@@ -28,7 +50,7 @@ const isSpeaking = ref(false);
 const canvasRef = ref(null);
 const isDrawing = ref(false);
 const currentColor = ref('#FF4D30');
-const currentSize = ref(16); // Matching brush size
+const currentSize = ref(16); // Default brush size
 const userStrokeCount = ref(0);
 
 // Validation Result State
@@ -117,7 +139,7 @@ function clearCanvas() {
     validationResult.value = null;
 }
 
-// BASE SCORE (75%) + PRECISION BONUS (25%) SYSTEM
+// DYNAMIC ACCURACY VALIDATION WITH RECALL & PRECISION ANTI-CHEAT
 function validateStroke() {
     const canvas = canvasRef.value;
     if (!canvas) return;
@@ -125,11 +147,14 @@ function validateStroke() {
     const width = canvas.width;
     const height = canvas.height;
     
-    // 1. Get User Canvas Data
+    // 1. Get User Canvas ImageData
     const userCtx = canvas.getContext('2d', { willReadFrequently: true });
     const userData = userCtx.getImageData(0, 0, width, height).data;
 
-    // 2. Offscreen Target Mask Canvas - STROKE ONLY
+    // 2. Fetch Character Dynamic Configuration
+    const config = CHARACTER_CONFIGS[props.character] || DEFAULT_CONFIG;
+
+    // 3. Offscreen Target Mask Canvas using CHARACTER_CONFIGS
     const maskCanvas = document.createElement('canvas');
     maskCanvas.width = width;
     maskCanvas.height = height;
@@ -137,38 +162,36 @@ function validateStroke() {
 
     maskCtx.clearRect(0, 0, width, height);
 
+    // Dynamic Target Mask Properties
     maskCtx.strokeStyle = '#000000';
-    maskCtx.lineWidth = 20; // 20px line width corridor
+    maskCtx.lineWidth = config.strokeWidth;
     maskCtx.lineCap = 'round';
     maskCtx.lineJoin = 'round';
-    maskCtx.font = 'bold 130px sans-serif';
+    maskCtx.font = `bold ${config.fontSize}px sans-serif`;
     maskCtx.textAlign = 'center';
     maskCtx.textBaseline = 'middle';
 
-    maskCtx.strokeText(props.character, width / 2, height / 2);
+    // RENDER DYNAMIC STROKE MASK (No fillText)
+    maskCtx.strokeText(props.character, width / 2, (height / 2) + config.offsetY);
 
     const maskData = maskCtx.getImageData(0, 0, width, height).data;
 
-    let targetPixels = 0;
+    let strokeTargetPixels = 0;
     let userPixels = 0;
     let overlapPixels = 0;
 
-    // 3. Count Pixel Metrics
+    // 4. Count Pixels
     for (let i = 0; i < userData.length; i += 4) {
         const userAlpha = userData[i + 3];
         const maskAlpha = maskData[i + 3];
 
         const isUser = userAlpha > 30;
-        const isTarget = maskAlpha > 128; // Pure Black target stroke pixels
+        const isTarget = maskAlpha > 128; // Dynamic stroke line target pixels
 
-        if (isTarget) targetPixels++;
+        if (isTarget) strokeTargetPixels++;
         if (isUser) userPixels++;
         if (isUser && isTarget) overlapPixels++;
     }
-
-    const outsidePixels = Math.max(0, userPixels - overlapPixels);
-    const coveragePct = targetPixels > 0 ? (overlapPixels / targetPixels) * 100 : 0;
-    const outsideRatio = userPixels > 0 ? (outsidePixels / userPixels) * 100 : 0;
 
     if (userPixels < 60) {
         validationResult.value = {
@@ -180,40 +203,43 @@ function validateStroke() {
         return;
     }
 
-    // 4. BASE SCORE (75%) + PRECISION BONUS (MAX 25%) SYSTEM
+    // 5. RECALL & PRECISION SCORING METHOD WITH ANTI-CHEAT
+    // Recall: % of target stroke corridor covered by user
+    const recall = strokeTargetPixels > 0 ? (overlapPixels / strokeTargetPixels) * 100 : 0;
+    
+    // Precision: % of user strokes that actually land inside target corridor
+    const precision = userPixels > 0 ? (overlapPixels / userPixels) * 100 : 0;
+
+    // Weighted Raw Score: (Recall * 0.6) + (Precision * 0.4)
+    const rawScore = (recall * 0.6) + (precision * 0.4);
+
     let finalScore = 0;
 
-    if (coveragePct >= 35) {
-        // Base score 75% for covering >= 35% of stroke line
-        const baseScore = 75;
-        // Precision bonus up to +25% based on coverage depth (35% to 70%)
-        const precisionBonus = Math.min(25, Math.round(((coveragePct - 35) / 35) * 25));
-        finalScore = baseScore + precisionBonus;
+    if (precision < 40) {
+        // Heavy penalty if user scribbles randomly outside ("cat tembok")
+        const penalty = (40 - precision) * 2.5;
+        finalScore = Math.max(0, Math.round(rawScore - penalty));
+    } else if (recall >= 35 && precision >= 40) {
+        // User traced the character shape nicely -> Award 80%+
+        finalScore = Math.min(100, Math.round(80 + ((rawScore - 35) / 65) * 20));
     } else {
-        // Below 35% coverage, scale linearly up to 70%
-        finalScore = Math.round((coveragePct / 35) * 70);
-    }
-
-    // 5. EXTREME PENALTY ONLY FOR WILD SCRIBBLING (outsideRatio > 35%)
-    let penalty = 0;
-    if (outsideRatio > 35) {
-        penalty = Math.round((outsideRatio - 35) * 2);
-        finalScore = Math.max(0, finalScore - penalty);
+        finalScore = Math.round((rawScore / 35) * 75);
     }
 
     finalScore = Math.max(0, Math.min(100, finalScore));
 
-    // BROWSER CONSOLE LOGGING
-    console.log('[Aksantara Tracing - Base Score System]:', {
+    // Console Logging for Browser Debugging
+    console.log('[Aksantara Dynamic Tracing Validation]:', {
         huruf: props.character,
         latin: props.latin,
+        configUsed: config,
         canvasSize: `${width}x${height}`,
-        totalPixelTarget: targetPixels,
-        totalPixelUser: userPixels,
-        totalPixelOverlap: overlapPixels,
-        persentaseCakupan: coveragePct.toFixed(2) + '%',
-        rasioMelencengLuar: outsideRatio.toFixed(2) + '%',
-        penalti: penalty,
+        totalStrokeTargetPixels: strokeTargetPixels,
+        userPixelsDrawn: userPixels,
+        overlapPixels: overlapPixels,
+        recallPercent: recall.toFixed(2) + '%',
+        precisionPercent: precision.toFixed(2) + '%',
+        rawScore: rawScore.toFixed(2),
         skorAkurasiAkhir: finalScore + '%'
     });
 
@@ -222,7 +248,7 @@ function validateStroke() {
             score: finalScore,
             success: true,
             message: 'Luar Biasa! Goresanmu Sangat Presisi! 🎉',
-            details: `Akurasi: ${finalScore}% • Terisi: ${overlapPixels}px / ${targetPixels}px • Bonus: +10 XP`
+            details: `Akurasi: ${finalScore}% • Jalur Terisi: ${Math.round(recall)}% • Presisi: ${Math.round(precision)}% • Bonus: +10 XP`
         };
         emit('xpGained', 10);
     } else {
@@ -230,7 +256,7 @@ function validateStroke() {
             score: finalScore,
             success: false,
             message: 'Yuk Coba Lagi! 💪',
-            details: `Akurasi: ${finalScore}% (Minimal 80% untuk dapet XP) • ${outsideRatio > 35 ? 'Coretan terlalu banyak melenceng di luar area huruf!' : 'Ikuti alur garis huruf lebih lengkap.'}`
+            details: `Akurasi: ${finalScore}% (Jalur: ${Math.round(recall)}%, Presisi: ${Math.round(precision)}%) • ${precision < 40 ? 'Coretan terlalu banyak melenceng keluar!' : 'Coretan belum memenuhi bentuk huruf.'}`
         };
     }
 }
@@ -383,14 +409,14 @@ watch(activeTab, (newTab) => {
 
                     <div class="flex items-center gap-1 bg-orange-100 p-1 rounded-2xl border-2 border-orange-200">
                         <button
-                            @click="currentSize = 10"
-                            class="px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer"
-                            :class="currentSize === 10 ? 'bg-white text-gray-800 shadow' : 'text-gray-500'"
+                            @click="currentSize = 12"
+                            class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition cursor-pointer"
+                            :class="currentSize === 12 ? 'bg-[#FF4D30] text-white shadow' : 'text-gray-600 hover:bg-orange-200'"
                         >Tipis</button>
                         <button
-                            @click="currentSize = 18"
-                            class="px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer"
-                            :class="currentSize = 18 ? 'bg-white text-gray-800 shadow' : 'text-gray-500'"
+                            @click="currentSize = 22"
+                            class="px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                            :class="currentSize === 22 ? 'bg-[#FF4D30] text-white shadow' : 'text-gray-600 hover:bg-orange-200'"
                         >Tebal</button>
                     </div>
                 </div>

@@ -556,14 +556,6 @@ function startLevel(level) {
                             </span>
                         </button>
                     </div>
-
-                    <!-- Interactive Embedded Canvas -->
-                    <div class="pt-6 border-t-2 border-dashed border-orange-200">
-                        <div class="text-center mb-4">
-                            <h3 class="text-lg font-extrabold text-gray-800">Canvas Langsung</h3>
-                        </div>
-                        <CanvasTracing initialCharacter="ᮊ" latin="Ka" />
-                    </div>
                 </div>
             </div>
 
