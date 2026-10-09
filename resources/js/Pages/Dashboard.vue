@@ -6,6 +6,7 @@ import CanvasModal from '@/Components/CanvasModal.vue';
 import VirtualKeyboard from '@/Components/VirtualKeyboard.vue';
 import SpeechPronunciation from '@/Components/SpeechPronunciation.vue';
 import QuizModal from '@/Components/QuizModal.vue';
+import KamusAksara from '@/Components/KamusAksara.vue';
 
 const props = defineProps({
     userProgress: {
@@ -15,7 +16,7 @@ const props = defineProps({
 });
 
 // State Tab Navigasi Bebas
-const activeTab = ref('map'); // 'map' | 'nulis' | 'ketik' | 'cerita'
+const activeTab = ref('map'); // 'map' | 'nulis' | 'ketik' | 'kamus' | 'cerita'
 
 // CanvasModal State
 const showCanvasModal = ref(false);
@@ -247,7 +248,7 @@ function startLevel(level) {
 <template>
     <Head title="Petualangan Aksara Sunda - Aksantara" />
 
-    <div class="min-h-screen bg-amber-50 text-gray-800 font-sans selection:bg-[#FF4D30] selection:text-white pb-28 sm:pb-32">
+    <div class="min-h-screen bg-[#FFFDF5] text-gray-800 font-sans selection:bg-[#FF4D30] selection:text-white pb-28 sm:pb-32">
         
         <!-- ═══════════════════════════════════════════════════════ -->
         <!-- 1. TOP BAR GAME STATUS                                  -->
@@ -335,44 +336,58 @@ function startLevel(level) {
         </header>
 
         <!-- ═══════════════════════════════════════════════════════ -->
-        <!-- 2. DESKTOP TAB SWITCHER (NATIVE GAME FEEL TABS)        -->
+        <!-- 2. DESKTOP TAB SWITCHER (HORIZONTAL MENU 5 PILIHAN)     -->
         <!-- ═══════════════════════════════════════════════════════ -->
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 hidden lg:block">
-            <div class="bg-white p-2.5 rounded-3xl border-4 border-orange-200 shadow-md flex items-center justify-between gap-2">
+            <div class="bg-white p-2 rounded-3xl border-4 border-amber-300 shadow-lg flex items-center justify-between gap-2">
+                <!-- 1. Petualangan -->
                 <button
                     @click="activeTab = 'map'"
-                    class="flex-1 py-3 px-4 rounded-2xl font-extrabold text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-2"
-                    :class="activeTab === 'map' ? 'bg-[#FF4D30] text-white border-orange-700 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-orange-50/60 text-gray-700 border-orange-200 hover:bg-orange-100 active:translate-y-0.5 border-b-2'"
+                    class="flex-1 py-3 px-3 rounded-2xl font-extrabold text-xs sm:text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5"
+                    :class="activeTab === 'map' ? 'bg-[#FF4D30] text-white border-orange-700 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-orange-50/50 text-gray-700 border-orange-200 hover:bg-orange-100 active:translate-y-0.5 border-b-2'"
                 >
-                    <span class="text-xl">🗺️</span>
-                    <span>Peta Petualangan</span>
+                    <span class="text-lg">🗺️</span>
+                    <span>Petualangan</span>
                 </button>
 
+                <!-- 2. Coretan -->
                 <button
                     @click="activeTab = 'nulis'"
-                    class="flex-1 py-3 px-4 rounded-2xl font-extrabold text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-2"
-                    :class="activeTab === 'nulis' ? 'bg-[#FF4D30] text-white border-orange-700 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-orange-50/60 text-gray-700 border-orange-200 hover:bg-orange-100 active:translate-y-0.5 border-b-2'"
+                    class="flex-1 py-3 px-3 rounded-2xl font-extrabold text-xs sm:text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5"
+                    :class="activeTab === 'nulis' ? 'bg-[#FF4D30] text-white border-orange-700 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-orange-50/50 text-gray-700 border-orange-200 hover:bg-orange-100 active:translate-y-0.5 border-b-2'"
                 >
-                    <span class="text-xl">✏️</span>
-                    <span>Modul Canvas Nulis</span>
+                    <span class="text-lg">✏️</span>
+                    <span>Coretan</span>
                 </button>
 
+                <!-- 3. Ketik -->
                 <button
                     @click="activeTab = 'ketik'"
-                    class="flex-1 py-3 px-4 rounded-2xl font-extrabold text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-2"
-                    :class="activeTab === 'ketik' ? 'bg-purple-600 text-white border-purple-800 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-purple-50/60 text-purple-900 border-purple-200 hover:bg-purple-100 active:translate-y-0.5 border-b-2'"
+                    class="flex-1 py-3 px-3 rounded-2xl font-extrabold text-xs sm:text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5"
+                    :class="activeTab === 'ketik' ? 'bg-purple-600 text-white border-purple-800 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-purple-50/50 text-purple-900 border-purple-200 hover:bg-purple-100 active:translate-y-0.5 border-b-2'"
                 >
-                    <span class="text-xl">⌨️</span>
-                    <span>Ketik & Audio Suara</span>
+                    <span class="text-lg">⌨️</span>
+                    <span>Ketik</span>
                 </button>
 
+                <!-- 4. Kamus -->
+                <button
+                    @click="activeTab = 'kamus'"
+                    class="flex-1 py-3 px-3 rounded-2xl font-extrabold text-xs sm:text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5"
+                    :class="activeTab === 'kamus' ? 'bg-amber-500 text-white border-amber-700 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-amber-50/50 text-amber-900 border-amber-200 hover:bg-amber-100 active:translate-y-0.5 border-b-2'"
+                >
+                    <span class="text-lg">📚</span>
+                    <span>Kamus</span>
+                </button>
+
+                <!-- 5. Dongeng -->
                 <button
                     @click="activeTab = 'cerita'"
-                    class="flex-1 py-3 px-4 rounded-2xl font-extrabold text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-2"
-                    :class="activeTab === 'cerita' ? 'bg-teal-500 text-white border-teal-700 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-teal-50/60 text-teal-900 border-teal-200 hover:bg-teal-100 active:translate-y-0.5 border-b-2'"
+                    class="flex-1 py-3 px-3 rounded-2xl font-extrabold text-xs sm:text-sm border-2 border-b-4 transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5"
+                    :class="activeTab === 'cerita' ? 'bg-teal-500 text-white border-teal-700 shadow-[0_3px_0_0_rgba(0,0,0,0.15)]' : 'bg-teal-50/50 text-teal-900 border-teal-200 hover:bg-teal-100 active:translate-y-0.5 border-b-2'"
                 >
-                    <span class="text-xl">📖</span>
-                    <span>Cerita Rakyat Sunda</span>
+                    <span class="text-lg">📖</span>
+                    <span>Dongeng</span>
                 </button>
             </div>
         </div>
@@ -623,7 +638,14 @@ function startLevel(level) {
             </div>
 
             <!-- =================================================== -->
-            <!-- TAB 4: CERITA RAKYAT SUNDA (FULL-WIDTH)             -->
+            <!-- TAB 4: KAMUS AKSARA SUNDA (FULL-WIDTH)              -->
+            <!-- =================================================== -->
+            <div v-else-if="activeTab === 'kamus'" class="max-w-5xl mx-auto">
+                <KamusAksara />
+            </div>
+
+            <!-- =================================================== -->
+            <!-- TAB 5: CERITA RAKYAT SUNDA / DONGENG (FULL-WIDTH)   -->
             <!-- =================================================== -->
             <div v-else-if="activeTab === 'cerita'" class="max-w-5xl mx-auto">
                 <div class="bg-white rounded-3xl p-6 sm:p-8 border-4 border-teal-300 shadow-xl mb-6">
@@ -699,41 +721,50 @@ function startLevel(level) {
         <!-- ═══════════════════════════════════════════════════════ -->
         <!-- 4. MOBILE FIXED BOTTOM NAVBAR (FLOATING GAME UI BAR)    -->
         <!-- ═══════════════════════════════════════════════════════ -->
-        <nav class="lg:hidden fixed bottom-3 left-4 right-4 z-50 bg-white/95 backdrop-blur-md rounded-3xl border-4 border-orange-300 shadow-2xl p-1.5 flex items-center justify-around">
+        <nav class="lg:hidden fixed bottom-3 left-3 right-3 z-50 bg-white/95 backdrop-blur-md rounded-3xl border-4 border-amber-300 shadow-2xl p-1.5 flex items-center justify-around gap-1">
             <button
                 @click="activeTab = 'map'"
-                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[11px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
+                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[10px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
                 :class="activeTab === 'map' ? 'bg-[#FF4D30] text-white shadow-md' : 'text-gray-600 hover:bg-orange-100'"
             >
-                <span class="text-xl leading-none">🗺️</span>
-                <span class="mt-1">Peta</span>
+                <span class="text-lg leading-none">🗺️</span>
+                <span class="mt-0.5">Peta</span>
             </button>
 
             <button
                 @click="activeTab = 'nulis'"
-                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[11px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
+                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[10px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
                 :class="activeTab === 'nulis' ? 'bg-[#FF4D30] text-white shadow-md' : 'text-gray-600 hover:bg-orange-100'"
             >
-                <span class="text-xl leading-none">✏️</span>
-                <span class="mt-1">Nulis</span>
+                <span class="text-lg leading-none">✏️</span>
+                <span class="mt-0.5">Coretan</span>
             </button>
 
             <button
                 @click="activeTab = 'ketik'"
-                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[11px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
+                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[10px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
                 :class="activeTab === 'ketik' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-600 hover:bg-purple-100'"
             >
-                <span class="text-xl leading-none">⌨️</span>
-                <span class="mt-1">Ketik</span>
+                <span class="text-lg leading-none">⌨️</span>
+                <span class="mt-0.5">Ketik</span>
+            </button>
+
+            <button
+                @click="activeTab = 'kamus'"
+                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[10px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
+                :class="activeTab === 'kamus' ? 'bg-amber-500 text-white shadow-md' : 'text-gray-600 hover:bg-amber-100'"
+            >
+                <span class="text-lg leading-none">📚</span>
+                <span class="mt-0.5">Kamus</span>
             </button>
 
             <button
                 @click="activeTab = 'cerita'"
-                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[11px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
+                class="flex-1 py-2 px-1 rounded-2xl font-extrabold text-[10px] flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95"
                 :class="activeTab === 'cerita' ? 'bg-teal-500 text-white shadow-md' : 'text-gray-600 hover:bg-teal-100'"
             >
-                <span class="text-xl leading-none">📖</span>
-                <span class="mt-1">Cerita</span>
+                <span class="text-lg leading-none">📖</span>
+                <span class="mt-0.5">Dongeng</span>
             </button>
         </nav>
 
