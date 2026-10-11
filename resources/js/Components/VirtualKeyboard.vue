@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
+import { playSundaAudio, isAnyAudioPlaying } from '@/Utils/audioPlayer';
 
 const typedText = ref('');
 const activePronunciation = ref('');
@@ -240,14 +241,11 @@ function getLatinTransliteration(text) {
 function speak(text) {
     if (!text) return;
     activePronunciation.value = text;
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'id-ID';
-        utterance.rate = 0.85;
-        utterance.pitch = 1.25;
-        window.speechSynthesis.speak(utterance);
-    }
+    playSundaAudio(text, {
+        onStart: () => {
+            activePronunciation.value = text;
+        },
+    });
 }
 
 function speakAll() {
@@ -255,14 +253,11 @@ function speakAll() {
     const transliteratedText = getLatinTransliteration(typedText.value);
     activePronunciation.value = transliteratedText;
 
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(transliteratedText);
-        utterance.lang = 'id-ID';
-        utterance.rate = 0.8;
-        utterance.pitch = 1.2;
-        window.speechSynthesis.speak(utterance);
-    }
+    playSundaAudio(transliteratedText, {
+        onStart: () => {
+            activePronunciation.value = transliteratedText;
+        },
+    });
 }
 
 function backspace() {
@@ -415,15 +410,23 @@ async function shareText() {
 
                     <!-- Action Icons: Audio, Copy, Share -->
                     <div class="flex items-center gap-1.5 self-end sm:self-auto">
-                        <!-- Play TTS Button -->
+                        <!-- Play Audio Button with Active Soundwave Animation -->
                         <button
                             v-if="typedText.trim()"
                             @click="speakAll"
-                            class="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95"
-                            title="Dengarkan Pelafalan"
+                            class="px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                            :class="isAnyAudioPlaying
+                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-800 ring-2 ring-purple-300 animate-pulse'
+                                : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200'"
+                            :title="isAnyAudioPlaying ? 'Sedang Memutar Audio...' : 'Dengarkan Pelafalan (Logat Sunda Asli)'"
                         >
-                            <span>🔊</span>
-                            <span class="hidden xs:inline">Dengar</span>
+                            <span :class="{ 'animate-bounce': isAnyAudioPlaying }">🔊</span>
+                            <span class="hidden xs:inline">{{ isAnyAudioPlaying ? 'Muter...' : 'Dengar' }}</span>
+                            <!-- Animated Waves -->
+                            <span v-if="isAnyAudioPlaying" class="flex items-center gap-0.5">
+                                <span class="w-1 h-2 bg-white rounded-full animate-ping"></span>
+                                <span class="w-1 h-3 bg-white rounded-full animate-pulse"></span>
+                            </span>
                         </button>
 
                         <!-- Copy Button -->
