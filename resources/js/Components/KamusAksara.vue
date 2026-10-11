@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue';
+import { useSundaAudio } from '@/Utils/audioPlayer';
 
 const searchQuery = ref('');
 const selectedCategory = ref('semua');
-const activeAudioWord = ref('');
+const { isPlaying, play, stop } = useSundaAudio();
 
 const categories = [
     { id: 'semua', label: 'Semua Kosakata', icon: '✨' },
@@ -645,15 +646,11 @@ const filteredItems = computed(() => {
 
 function speak(text) {
     if (!text) return;
-    activeAudioWord.value = text;
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'id-ID';
-        utterance.rate = 0.85;
-        utterance.pitch = 1.2;
-        window.speechSynthesis.speak(utterance);
+    if (isPlaying(text)) {
+        stop();
+        return;
     }
+    play(text);
 }
 </script>
 
@@ -751,11 +748,20 @@ function speak(text) {
                         
                         <button
                             @click="speak(item.sundaLatin)"
-                            class="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-extrabold text-xs flex items-center gap-1 shadow-xs active:translate-y-0.5 transition cursor-pointer"
-                            title="Dengarkan Suara"
+                            class="px-3 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all duration-200 cursor-pointer shadow-xs border"
+                            :class="isPlaying(item.sundaLatin)
+                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-800 shadow-md ring-4 ring-purple-200 scale-105 animate-pulse'
+                                : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 active:translate-y-0.5'"
+                            :title="isPlaying(item.sundaLatin) ? 'Sedang Memutar Audio...' : 'Dengarkan Suara (Logat Sunda Asli)'"
                         >
-                            <span>🔊</span>
-                            <span>Dengar</span>
+                            <span :class="{ 'animate-bounce': isPlaying(item.sundaLatin) }">🔊</span>
+                            <span>{{ isPlaying(item.sundaLatin) ? 'Nyarios...' : 'Dengar' }}</span>
+                            <!-- Animated Soundwaves when playing -->
+                            <span v-if="isPlaying(item.sundaLatin)" class="flex items-center gap-0.5 ml-0.5">
+                                <span class="w-1 h-2.5 bg-white rounded-full animate-ping"></span>
+                                <span class="w-1 h-3.5 bg-white rounded-full animate-pulse"></span>
+                                <span class="w-1 h-2 bg-white rounded-full animate-bounce"></span>
+                            </span>
                         </button>
                     </div>
 

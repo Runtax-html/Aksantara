@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue';
+import { playSundaAudio } from '@/Utils/audioPlayer';
 
 const props = defineProps({
     initialText: {
@@ -34,23 +35,17 @@ function playAudio(latin) {
     activeWord.value = latin;
     isSpeaking.value = true;
 
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(latin);
-        utterance.lang = 'id-ID';
-        utterance.rate = 0.85;
-        utterance.pitch = 1.25;
-        
-        utterance.onend = () => {
+    playSundaAudio(latin, {
+        onStart: () => {
+            isSpeaking.value = true;
+        },
+        onEnd: () => {
             isSpeaking.value = false;
-        };
-
-        window.speechSynthesis.speak(utterance);
-    } else {
-        setTimeout(() => {
+        },
+        onError: () => {
             isSpeaking.value = false;
-        }, 800);
-    }
+        },
+    });
 }
 </script>
 
