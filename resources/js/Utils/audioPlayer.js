@@ -1,7 +1,9 @@
 /**
  * Audio Player Helper untuk Aksantara
- * Memutar file audio MP3 pre-rendered (Edge-TTS logat Sunda: su-ID-JajangNeural)
- * dari folder publik /audio/sunda/{slug}.mp3 dengan otomatis fallback ke Web Speech API.
+ * Memutar audio Edge-TTS logat Sunda asli (su-ID-JajangNeural).
+ * 1. Prioritas 1: File pre-rendered lokal di /audio/sunda/{slug}.mp3 (0ms latency).
+ * 2. Prioritas 2: Sintesis dinamis via /api/tts (Edge-TTS backend su-ID-JajangNeural) untuk kalimat bebas di keyboard.
+ * 3. Prioritas 3: Fallback ke Web Speech API jika jaringan/server offline.
  */
 
 import { ref } from 'vue';
@@ -85,7 +87,21 @@ export function textToSlug(text) {
 }
 
 /**
- * Fallback ke Web Speech API jika file MP3 belum ada
+ * Request audio URL dari backend Edge-TTS untuk kalimat bebas
+ */
+async function fetchEdgeTtsAudioUrl(text) {
+    try {
+        const response = await fetch(`/api/tts?text=${encodeURIComponent(text)}`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.url || null;
+    } catch (err) {
+        return null;
+    }
+}
+
+/**
+ * Fallback ke Web Speech API jika MP3 statis & API backend tidak tersedia
  */
 function playFallbackTTS(text, onEnd) {
     if ('speechSynthesis' in window) {
@@ -119,39 +135,28 @@ function playFallbackTTS(text, onEnd) {
 
 /**
  * Memutar audio kata/frasa bahasa Sunda
- * 1. Mencari file lokal di /audio/sunda/{slug}.mp3
- * 2. Jika 404/error, otomatis fallback ke Web Speech API
+ * Menggunakan model Edge-TTS logat Sunda asli (su-ID-JajangNeural)
  * 
  * @param {string} text - Kata Sunda Latin atau Aksara Sunda
  * @param {object} options - { onStart, onEnd, onError, fallback = true }
  */
-export function playSundaAudio(text, options = {}) {
+export async function playSundaAudio(text, options = {}) {
     if (!text) return;
 
-    const slug = textToSlug(text);
+    // Bersihkan teks jika ada karakter Aksara Sunda
+    let cleanText = text;
+    if (/[\u1B80-\u1BBF]/.test(cleanText)) {
+        cleanText = transliterateAksaraToLatin(cleanText);
+    }
+    const slug = textToSlug(cleanText);
+
     activePlayingSlug.value = slug;
     isAnyAudioPlaying.value = true;
 
     if (options.onStart) options.onStart(slug);
 
     // Hentikan audio sebelumnya jika ada
-    if (currentAudio) {
-        try {
-            currentAudio.pause();
-            currentAudio.currentTime = 0;
-        } catch (e) {
-            // Abaikan error pause
-        }
-    }
-
-    // Batalkan juga speech synthesis jika aktif
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-    }
-
-    const audioUrl = `/audio/sunda/${slug}.mp3`;
-    const audio = new Audio(audioUrl);
-    currentAudio = audio;
+    stopSundaAudio();
 
     const cleanup = () => {
         if (activePlayingSlug.value === slug) {
@@ -160,42 +165,62 @@ export function playSundaAudio(text, options = {}) {
         }
     };
 
-    audio.onended = () => {
-        cleanup();
-        if (options.onEnd) options.onEnd();
-    };
+    // ── 1. Coba putar file pre-rendered lokal jika berupa kata tunggal atau frasa umum ──
+    const isStaticEligible = !slug.includes('-') || ['hatur-nuhun', 'wilujeng-sumping', 'panon-poe', 'panonpoe'].includes(slug);
+    
+    if (isStaticEligible) {
+        const staticUrl = `/audio/sunda/${slug}.mp3`;
+        try {
+            const audio = new Audio(staticUrl);
+            currentAudio = audio;
 
-    audio.onerror = (e) => {
-        console.warn(`[Aksantara Audio] File lokal '${audioUrl}' tidak ditemukan. Menggunakan fallback TTS browser.`);
-        
-        if (options.fallback !== false) {
-            playFallbackTTS(text, () => {
+            audio.onended = () => {
                 cleanup();
                 if (options.onEnd) options.onEnd();
-            });
-        } else {
-            cleanup();
-            if (options.onError) options.onError(e);
-        }
-    };
+            };
 
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-            console.warn(`[Aksantara Audio] Gagal memutar file MP3:`, err.message);
-            if (options.fallback !== false) {
-                playFallbackTTS(text, () => {
-                    cleanup();
-                    if (options.onEnd) options.onEnd();
-                });
-            } else {
-                cleanup();
-                if (options.onError) options.onError(err);
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                await playPromise;
+                return audio;
             }
-        });
+        } catch (e) {
+            // File statis belum ada, lanjutkan ke langkah 2 (Dynamic Edge-TTS)
+        }
     }
 
-    return audio;
+    // ── 2. Request Edge-TTS ke backend Laravel (/api/tts) dengan model su-ID-JajangNeural ──
+    try {
+        const edgeTtsUrl = await fetchEdgeTtsAudioUrl(cleanText);
+        if (edgeTtsUrl) {
+            const audio = new Audio(edgeTtsUrl);
+            currentAudio = audio;
+
+            audio.onended = () => {
+                cleanup();
+                if (options.onEnd) options.onEnd();
+            };
+
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                await playPromise;
+                return audio;
+            }
+        }
+    } catch (e) {
+        // Lanjutkan ke fallback jika API gagal
+    }
+
+    // ── 3. Fallback terakhir jika backend/jaringan offline: Web Speech API ──
+    if (options.fallback !== false) {
+        playFallbackTTS(cleanText, () => {
+            cleanup();
+            if (options.onEnd) options.onEnd();
+        });
+    } else {
+        cleanup();
+        if (options.onError) options.onError(new Error('Audio playback failed'));
+    }
 }
 
 /**

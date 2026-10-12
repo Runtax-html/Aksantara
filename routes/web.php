@@ -1,9 +1,13 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\TtsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+// API Edge-TTS Audio Synthesizer (su-ID-JajangNeural)
+Route::match(['get', 'post'], '/api/tts', [TtsController::class, 'synthesize'])->name('api.tts');
 
 Route::get('/', function () {
     return Inertia::render('Landingpage', [
