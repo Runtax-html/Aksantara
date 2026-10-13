@@ -1,19 +1,73 @@
 /**
  * Audio Player Helper untuk Aksantara
  * Memutar audio Edge-TTS logat Sunda asli (su-ID-JajangNeural).
- * 1. Prioritas 1: File pre-rendered lokal di /audio/sunda/{slug}.mp3 (0ms latency).
- * 2. Prioritas 2: Sintesis dinamis via /api/tts (Edge-TTS backend su-ID-JajangNeural) untuk kalimat bebas di keyboard.
- * 3. Prioritas 3: Fallback ke Web Speech API jika jaringan/server offline.
+ * 
+ * Arsitektur Bebas Delay & Tanpa Model Lama:
+ * 1. STATIC_AUDIO_MANIFEST (O(1) Set): Pencarian instan untuk 230+ audio pre-rendered (suku kata, huruf, kamus, angka).
+ * 2. Audio Pool/Cache: Menggunakan kembali instance Audio agar tidak ada alokasi buffer delay dari browser.
+ * 3. Sequence Player: Memutar frasa/kalimat gabungan kata secara berurutan instan tanpa menunggu loading server.
+ * 4. Dynamic Edge-TTS (/api/tts): Mensintesis kalimat bebas di backend dengan model su-ID-JajangNeural.
+ * 5. Fallback Aman: Hanya jika server benar-benar offline.
  */
 
 import { ref } from 'vue';
 
-// Instance Audio tunggal untuk mencegah audio tumpang tindih
+// Instance Audio yang sedang aktif diputar
 let currentAudio = null;
+let currentSequenceTimer = null;
 
-// State reaktif global untuk pelacakan audio yang sedang aktif dimainkan
+// Audio Object Cache (mencegah lag inisialisasi decoder browser)
+const audioObjectCache = new Map();
+
+// State reaktif global untuk pelacakan audio yang sedang aktif
 export const activePlayingSlug = ref('');
 export const isAnyAudioPlaying = ref(false);
+
+/**
+ * Manifest seluruh audio MP3 pre-rendered lokal yang tersedia di public/audio/sunda/
+ * Pencarian O(1) menghilangkan 100% delay HTTP 404.
+ */
+const STATIC_AUDIO_MANIFEST = new Set([
+    // Vokal Mandiri (Swara)
+    'a', 'i', 'u', 'e', 'e-taling', 'o', 'eu',
+    // Konsonan Mati / Akhir
+    'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'ng', 'ny', 'p', 'r', 's', 't', 'v', 'w', 'y', 'z',
+    // Seluruh Kombinasi Suku Kata Sunda (Konsonan + 7 Vokal)
+    'ba', 'be', 'beu', 'bi', 'bo', 'bu',
+    'ca', 'ce', 'ceu', 'ci', 'co', 'cu',
+    'da', 'de', 'deu', 'di', 'do', 'du',
+    'fa', 'fe', 'feu', 'fi', 'fo', 'fu',
+    'ga', 'ge', 'geu', 'gi', 'go', 'gu',
+    'ha', 'he', 'heu', 'hi', 'ho', 'hu',
+    'ja', 'je', 'jeu', 'ji', 'jo', 'ju',
+    'ka', 'ke', 'ke-taling', 'keu', 'ki', 'ko', 'ku',
+    'la', 'le', 'leu', 'li', 'lo', 'lu',
+    'ma', 'me', 'meu', 'mi', 'mo', 'mu',
+    'na', 'ne', 'neu', 'ni', 'no', 'nu',
+    'nga', 'nge', 'ngeu', 'ngi', 'ngo', 'ngu',
+    'nya', 'nye', 'nyeu', 'nyi', 'nyo', 'nyu',
+    'pa', 'pe', 'peu', 'pi', 'po', 'pu',
+    'ra', 're', 'reu', 'ri', 'ro', 'ru',
+    'sa', 'se', 'seu', 'si', 'so', 'su',
+    'ta', 'te', 'teu', 'ti', 'to', 'tu',
+    'va', 've', 'veu', 'vi', 'vo', 'vu',
+    'wa', 'we', 'weu', 'wi', 'wo', 'wu',
+    'ya', 'ye', 'yeu', 'yi', 'yo', 'yu',
+    'za', 'ze', 'zeu', 'zi', 'zo', 'zu',
+    // Nama-Nama Tanda Vokalisasi Rarangèn
+    'pamaeh', 'pamepet', 'pamingkal', 'paneleng', 'paneuleung',
+    'panghulu', 'panglayar', 'pangwisad', 'panolong', 'panyakra',
+    'panyecek', 'panyiku', 'panyuku',
+    // Angka Sunda
+    'hiji', 'dua', 'tilu', 'opat', 'lima', 'genep', 'tujuh', 'dalapan', 'salapan', 'sapuluh',
+    // Kosakata Kamus & Frasa Umum
+    'adi', 'aki', 'amis', 'bapa', 'bentang', 'biwir', 'buku', 'bulan', 'buuk',
+    'cai', 'cau', 'ceuli', 'domba', 'gunung', 'hatur-nuhun', 'hayam', 'hujan', 'huntu',
+    'imah', 'indung', 'irung', 'kembang', 'korsi', 'kuya', 'lanceuk', 'lauk', 'leungeun',
+    'mangga', 'manuk', 'maung', 'meja', 'monyet', 'munding', 'nini', 'panon', 'panonpoe',
+    'patlot', 'punten', 'rampes', 'sakola', 'sampeu', 'sampurasun', 'sangu', 'sawah',
+    'suku', 'sunda', 'tangkal', 'ucing', 'wilujeng-sumping'
+]);
 
 /**
  * Peta karakter Aksara Sunda dasar ke Latin fonetik
@@ -30,7 +84,7 @@ const sundaCharToLatin = {
 };
 
 /**
- * Transliterasi sederhana dari Aksara Sunda ke teks Latin
+ * Transliterasi Aksara Sunda ke teks Latin
  */
 export function transliterateAksaraToLatin(text) {
     if (!text) return '';
@@ -67,7 +121,7 @@ export function transliterateAksaraToLatin(text) {
 }
 
 /**
- * Normalisasi teks ke nama file slug (contoh: "Hatur Nuhun" -> "hatur-nuhun")
+ * Normalisasi teks ke nama file slug
  */
 export function textToSlug(text) {
     if (!text) return '';
@@ -87,7 +141,20 @@ export function textToSlug(text) {
 }
 
 /**
- * Request audio URL dari backend Edge-TTS untuk kalimat bebas
+ * Mengambil atau membuat instance Audio ter-cache
+ */
+function getCachedAudio(url) {
+    if (!audioObjectCache.has(url)) {
+        const audio = new Audio(url);
+        audioObjectCache.set(url, audio);
+    }
+    const audio = audioObjectCache.get(url);
+    audio.currentTime = 0;
+    return audio;
+}
+
+/**
+ * Request audio URL dari backend Edge-TTS untuk kalimat kustom bebas
  */
 async function fetchEdgeTtsAudioUrl(text) {
     try {
@@ -101,7 +168,7 @@ async function fetchEdgeTtsAudioUrl(text) {
 }
 
 /**
- * Fallback ke Web Speech API jika MP3 statis & API backend tidak tersedia
+ * Fallback darurat ke Web Speech API jika backend & file lokal tidak merespons
  */
 function playFallbackTTS(text, onEnd) {
     if ('speechSynthesis' in window) {
@@ -129,22 +196,57 @@ function playFallbackTTS(text, onEnd) {
             activePlayingSlug.value = '';
             isAnyAudioPlaying.value = false;
             if (onEnd) onEnd();
-        }, 800);
+        }, 500);
     }
 }
 
 /**
- * Memutar audio kata/frasa bahasa Sunda
- * Menggunakan model Edge-TTS logat Sunda asli (su-ID-JajangNeural)
+ * Memutar runtutan kata audio yang sudah ada di manifest secara berurutan instan (0ms delay)
+ */
+function playAudioSequence(slugs, options, cleanup) {
+    let index = 0;
+
+    function playNext() {
+        if (index >= slugs.length) {
+            cleanup();
+            if (options.onEnd) options.onEnd();
+            return;
+        }
+
+        const currentSlug = slugs[index];
+        index++;
+
+        const url = `/audio/sunda/${currentSlug}.mp3`;
+        const audio = getCachedAudio(url);
+        currentAudio = audio;
+
+        audio.onended = () => {
+            currentSequenceTimer = setTimeout(playNext, 90); // jeda natural 90ms antar kata
+        };
+
+        audio.onerror = () => {
+            playNext();
+        };
+
+        audio.play().catch(() => {
+            playNext();
+        });
+    }
+
+    playNext();
+}
+
+/**
+ * Fungsi Utama Pemutar Audio Sunda Edge-TTS
  * 
- * @param {string} text - Kata Sunda Latin atau Aksara Sunda
+ * @param {string} text - Kata atau Kalimat Sunda
  * @param {object} options - { onStart, onEnd, onError, fallback = true }
  */
 export async function playSundaAudio(text, options = {}) {
     if (!text) return;
 
-    // Bersihkan teks jika ada karakter Aksara Sunda
-    let cleanText = text;
+    // Bersihkan teks dari aksara Sunda jika ada
+    let cleanText = text.trim();
     if (/[\u1B80-\u1BBF]/.test(cleanText)) {
         cleanText = transliterateAksaraToLatin(cleanText);
     }
@@ -152,10 +254,9 @@ export async function playSundaAudio(text, options = {}) {
 
     activePlayingSlug.value = slug;
     isAnyAudioPlaying.value = true;
-
     if (options.onStart) options.onStart(slug);
 
-    // Hentikan audio sebelumnya jika ada
+    // Hentikan audio sebelumnya
     stopSundaAudio();
 
     const cleanup = () => {
@@ -165,35 +266,41 @@ export async function playSundaAudio(text, options = {}) {
         }
     };
 
-    // ── 1. Coba putar file pre-rendered lokal jika berupa kata tunggal atau frasa umum ──
-    const isStaticEligible = !slug.includes('-') || ['hatur-nuhun', 'wilujeng-sumping', 'panon-poe', 'panonpoe'].includes(slug);
-    
-    if (isStaticEligible) {
-        const staticUrl = `/audio/sunda/${slug}.mp3`;
+    // ── STRATEGI 1: Audio Pre-rendered Tunggal (O(1) Instant - 0ms Delay) ──
+    if (STATIC_AUDIO_MANIFEST.has(slug)) {
+        const url = `/audio/sunda/${slug}.mp3`;
+        const audio = getCachedAudio(url);
+        currentAudio = audio;
+
+        audio.onended = () => {
+            cleanup();
+            if (options.onEnd) options.onEnd();
+        };
+
         try {
-            const audio = new Audio(staticUrl);
-            currentAudio = audio;
-
-            audio.onended = () => {
-                cleanup();
-                if (options.onEnd) options.onEnd();
-            };
-
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-                await playPromise;
-                return audio;
-            }
+            await audio.play();
+            return audio;
         } catch (e) {
-            // File statis belum ada, lanjutkan ke langkah 2 (Dynamic Edge-TTS)
+            // Jika ada halangan browser play, lanjutkan
         }
     }
 
-    // ── 2. Request Edge-TTS ke backend Laravel (/api/tts) dengan model su-ID-JajangNeural ──
+    // ── STRATEGI 2: Kalimat Gabungan dari Kata-Kata yang Ada di Manifest ──
+    // Contoh user mengetik: "ka ga nga", "hiji dua tilu", "kuring diajar aksara sunda"
+    const words = cleanText.split(/\s+/).map(w => textToSlug(w)).filter(Boolean);
+    const allWordsInManifest = words.length > 1 && words.every(w => STATIC_AUDIO_MANIFEST.has(w));
+
+    if (allWordsInManifest) {
+        playAudioSequence(words, options, cleanup);
+        return;
+    }
+
+    // ── STRATEGI 3: Sintesis Dinamis Edge-TTS Backend (/api/tts) ──
+    // Untuk kalimat bebas atau frasa panjang kustom anak-anak
     try {
         const edgeTtsUrl = await fetchEdgeTtsAudioUrl(cleanText);
         if (edgeTtsUrl) {
-            const audio = new Audio(edgeTtsUrl);
+            const audio = getCachedAudio(edgeTtsUrl);
             currentAudio = audio;
 
             audio.onended = () => {
@@ -208,10 +315,10 @@ export async function playSundaAudio(text, options = {}) {
             }
         }
     } catch (e) {
-        // Lanjutkan ke fallback jika API gagal
+        console.warn('[Aksantara Audio] Sintesis Edge-TTS gagal:', e);
     }
 
-    // ── 3. Fallback terakhir jika backend/jaringan offline: Web Speech API ──
+    // ── STRATEGI 4: Fallback Darurat Web Speech API ──
     if (options.fallback !== false) {
         playFallbackTTS(cleanText, () => {
             cleanup();
@@ -227,6 +334,10 @@ export async function playSundaAudio(text, options = {}) {
  * Hentikan pemutaran audio yang sedang berjalan
  */
 export function stopSundaAudio() {
+    if (currentSequenceTimer) {
+        clearTimeout(currentSequenceTimer);
+        currentSequenceTimer = null;
+    }
     if (currentAudio) {
         try {
             currentAudio.pause();
@@ -242,7 +353,7 @@ export function stopSundaAudio() {
 }
 
 /**
- * Helper Composable untuk Vue Component
+ * Composable Vue untuk integrasi di template
  */
 export function useSundaAudio() {
     function isPlaying(word) {

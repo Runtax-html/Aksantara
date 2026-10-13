@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
+import { playSundaAudio } from '@/Utils/audioPlayer';
 
 const props = defineProps({
     show: {
@@ -19,26 +20,42 @@ const props = defineProps({
 const emit = defineEmits(['close', 'xpGained']);
 
 // ─── DICTIONARY CONFIG HURUF (CHARACTER_CONFIGS) ───
+// Vokal sederhana -> paddingStroke: 10
+// Konsonan -> paddingStroke: 12 (zona toleransi coretan anak SD)
 const CHARACTER_CONFIGS = {
-    'ᮃ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮄ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮅ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮈ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮇ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮊ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮌ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮎ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮏ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮓ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮔ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮕ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮘ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮙ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮞ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮠ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    // Vokal Sederhana (Swara)
+    'ᮃ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮄ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮅ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮈ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮇ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮉ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    // Konsonan (Ngalagena)
+    'ᮊ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮌ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮍ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮎ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮏ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮑ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮒ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮓ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮔ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮕ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮘ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮙ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮞ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮠ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮚ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮛ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮜ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮝ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
 };
 
-const DEFAULT_CONFIG = { fontSize: 130, strokeWidth: 28, offsetY: 0 };
+const DEFAULT_CONFIG = { fontSize: 125, paddingStroke: 12, offsetY: 0 };
+
+const currentConfig = computed(() => {
+    return CHARACTER_CONFIGS[props.character] || DEFAULT_CONFIG;
+});
 
 // Tab state: 'guide' | 'practice'
 const activeTab = ref('guide');
@@ -61,20 +78,20 @@ const animationKey = ref(0);
 
 const colors = ['#FF4D30', '#10B981', '#6366F1', '#F59E0B', '#111827'];
 
-// Audio Pronunciation
+// Audio Pronunciation (Edge-TTS Sundanese su-ID-JajangNeural)
 function speakCharacter() {
     isSpeaking.value = true;
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(props.latin);
-        utterance.lang = 'id-ID';
-        utterance.rate = 0.85;
-        utterance.pitch = 1.2;
-        utterance.onend = () => { isSpeaking.value = false; };
-        window.speechSynthesis.speak(utterance);
-    } else {
-        setTimeout(() => { isSpeaking.value = false; }, 800);
-    }
+    playSundaAudio(props.latin, {
+        onStart: () => {
+            isSpeaking.value = true;
+        },
+        onEnd: () => {
+            isSpeaking.value = false;
+        },
+        onError: () => {
+            isSpeaking.value = false;
+        },
+    });
 }
 
 function restartGuideAnimation() {
@@ -162,17 +179,23 @@ function validateStroke() {
 
     maskCtx.clearRect(0, 0, width, height);
 
-    // Dynamic Target Mask Properties
+    // Dynamic Target Mask Properties (Solid letter fill + outer padding stroke boundary)
+    maskCtx.fillStyle = '#000000';
     maskCtx.strokeStyle = '#000000';
-    maskCtx.lineWidth = config.strokeWidth;
+    maskCtx.lineWidth = config.paddingStroke;
     maskCtx.lineCap = 'round';
     maskCtx.lineJoin = 'round';
     maskCtx.font = `bold ${config.fontSize}px sans-serif`;
     maskCtx.textAlign = 'center';
     maskCtx.textBaseline = 'middle';
 
-    // RENDER DYNAMIC STROKE MASK (No fillText)
-    maskCtx.strokeText(props.character, width / 2, (height / 2) + config.offsetY);
+    const targetX = width / 2;
+    const targetY = (height / 2) + config.offsetY;
+
+    // 1. Fill solid character body
+    maskCtx.fillText(props.character, targetX, targetY);
+    // 2. Stroke outer tolerance boundary with paddingStroke
+    maskCtx.strokeText(props.character, targetX, targetY);
 
     const maskData = maskCtx.getImageData(0, 0, width, height).data;
 
@@ -186,7 +209,7 @@ function validateStroke() {
         const maskAlpha = maskData[i + 3];
 
         const isUser = userAlpha > 30;
-        const isTarget = maskAlpha > 128; // Dynamic stroke line target pixels
+        const isTarget = maskAlpha > 128; // Dynamic solid letter + tolerance corridor target pixels
 
         if (isTarget) strokeTargetPixels++;
         if (isUser) userPixels++;
@@ -232,6 +255,8 @@ function validateStroke() {
     console.log('[Aksantara Dynamic Tracing Validation]:', {
         huruf: props.character,
         latin: props.latin,
+        fontSize: config.fontSize,
+        paddingStroke: config.paddingStroke,
         configUsed: config,
         canvasSize: `${width}x${height}`,
         totalStrokeTargetPixels: strokeTargetPixels,
@@ -373,8 +398,14 @@ watch(activeTab, (newTab) => {
                 <!-- HTML5 Canvas Box -->
                 <div class="relative w-full max-w-xs aspect-square bg-orange-50/60 rounded-3xl border-4 border-orange-200 overflow-hidden shadow-inner flex items-center justify-center">
                     <!-- Background Watermark -->
-                    <div class="absolute inset-0 flex items-center justify-center select-none pointer-events-none">
-                        <span class="text-9xl sm:text-[140px] font-bold text-orange-200/60">
+                    <div
+                        class="absolute inset-0 flex items-center justify-center select-none pointer-events-none"
+                        :style="{ transform: `translateY(${currentConfig.offsetY}px)` }"
+                    >
+                        <span
+                            class="font-bold text-orange-200/60 leading-none select-none"
+                            :style="{ fontSize: `${currentConfig.fontSize}px` }"
+                        >
                             {{ character }}
                         </span>
                     </div>
