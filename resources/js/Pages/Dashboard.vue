@@ -1,28 +1,286 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
+import axios from 'axios';
 import CanvasTracing from '@/Components/CanvasTracing.vue';
 import CanvasModal from '@/Components/CanvasModal.vue';
+import StrokeGuideModal from '@/Components/StrokeGuideModal.vue';
 import VirtualKeyboard from '@/Components/VirtualKeyboard.vue';
 import SpeechPronunciation from '@/Components/SpeechPronunciation.vue';
 import QuizModal from '@/Components/QuizModal.vue';
 import KamusAksara from '@/Components/KamusAksara.vue';
+import StoryReaderModal from '@/Components/StoryReaderModal.vue';
 
 const props = defineProps({
     userProgress: {
         type: Array,
         default: () => [],
+    },
+    gamification: {
+        type: Object,
+        default: () => null,
     }
 });
 
 // State Tab Navigasi Bebas
 const activeTab = ref('map'); // 'map' | 'nulis' | 'ketik' | 'kamus' | 'cerita'
 
+// ═══════════════════════════════════════════════════════════════════
+// GAMIFIKASI & USER STATS REACTIVE STATE
+// ═══════════════════════════════════════════════════════════════════
+const userCoins = ref(props.gamification?.user?.coins ?? 50);
+const userXP = ref(props.gamification?.user?.xp ?? 0);
+const userLevel = ref(props.gamification?.user?.level ?? 1);
+const userStreak = ref(props.gamification?.user?.streak ?? 1);
+
+const userCurrentLevelXp = computed(() => userXP.value % 100);
+const userXpPercent = computed(() => Math.min(100, Math.round((userCurrentLevelXp.value / 100) * 100)));
+
+// Default Adventure Levels if not provided by backend
+const defaultLevelsData = [
+    {
+        id: 1,
+        title: 'Level 1: Swara Aksara Sunda',
+        subtitle: 'a, i, u, é, o, e, eu (Pilihan & Tulis)',
+        status: 'active',
+        stars: 0,
+        icon: '🚀',
+        color: 'from-[#FF4D30] to-orange-500',
+    },
+    {
+        id: 2,
+        title: 'Level 2: Ngalagena Dasar 1',
+        subtitle: 'ka, ga, nga, ca, ja, nya',
+        status: 'locked',
+        stars: 0,
+        icon: '🔒',
+        color: 'from-slate-300 to-slate-400',
+    },
+    {
+        id: 3,
+        title: 'Level 3: Ngalagena Dasar 2',
+        subtitle: 'ta, da, na, pa, ba, ma',
+        status: 'locked',
+        stars: 0,
+        icon: '🔒',
+        color: 'from-slate-300 to-slate-400',
+    },
+    {
+        id: 4,
+        title: 'Level 4: Kosakata Alam & Sato',
+        subtitle: 'Ucing, Hayam, Maung, Tangkal',
+        status: 'locked',
+        stars: 0,
+        icon: '🔒',
+        color: 'from-slate-300 to-slate-400',
+    },
+    {
+        id: 5,
+        title: 'Level 5: Awak & Dahareun',
+        subtitle: 'Panon, Leungeun, Cau, Huis',
+        status: 'locked',
+        stars: 0,
+        icon: '🔒',
+        color: 'from-slate-300 to-slate-400',
+    },
+    {
+        id: 6,
+        title: 'Level 6: Jawara Aksara Sunda',
+        subtitle: 'Tantangan Menulis & Tebak Kata',
+        status: 'locked',
+        stars: 0,
+        icon: '👑🔒',
+        color: 'from-amber-400 to-yellow-500',
+    },
+];
+
+const levels = ref(props.gamification?.levels ?? defaultLevelsData);
+const completedLevelsCount = computed(() => levels.value.filter(l => l.status === 'completed').length);
+
+// ═══════════════════════════════════════════════════════════════════
+// MISI HARIAN OTOMATIS STATE
+// ═══════════════════════════════════════════════════════════════════
+const defaultMissionsData = [
+    { id: 1, key: 'complete_level', title: 'Selesaikan 1 Level Petualangan', reward: 20, completed: false },
+    { id: 2, key: 'practice_writing', title: 'Latihan Menulis di Canvas', reward: 15, completed: false },
+    { id: 3, key: 'read_story', title: 'Baca 1 Cerita Dongeng Sunda', reward: 25, completed: false },
+];
+
+const missions = ref(props.gamification?.missions ?? defaultMissionsData);
+const completedMissionsCount = computed(() => missions.value.filter(m => m.completed).length);
+const allMissionsCompleted = computed(() => missions.value.length > 0 && completedMissionsCount.value === missions.value.length);
+const bonusClaimed = ref(props.gamification?.bonusClaimed ?? false);
+const isClaimingBonus = ref(false);
+const toastMessage = ref('');
+
+function showToast(msg) {
+    toastMessage.value = msg;
+    setTimeout(() => {
+        toastMessage.value = '';
+    }, 4500);
+}
+
+async function claimSpecialBonus() {
+    if (isClaimingBonus.value || bonusClaimed.value || !allMissionsCompleted.value) return;
+    isClaimingBonus.value = true;
+    try {
+        const res = await axios.post('/api/gamification/claim-mission-bonus');
+        if (res.data.success) {
+            updateGamificationState(res.data.state);
+            showToast(res.data.message || 'Selamat! Hadiah Spesial Box Berhasil Diklaim! 🎁');
+        }
+    } catch (err) {
+        console.error('Gagal klaim bonus misi:', err);
+    } finally {
+        isClaimingBonus.value = false;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DONGENG SUNDA BERBASIS KOIN
+// ═══════════════════════════════════════════════════════════════════
+const unlockedStoryIds = ref(props.gamification?.unlockedStoryIds ?? [1]);
+
+const sundaFolktales = [
+    {
+        id: 1,
+        title: 'Si Kabayan Ngala Tutut',
+        region: 'Jawa Barat',
+        readTime: '3 Menit',
+        difficulty: 'Pemula',
+        cost: 0, // GRATIS untuk semua pengguna termasuk baru
+        icon: '👨‍🌾',
+        summary: 'Dongeng lucu Si Kabayan anu disuruh ku mitoha ngala tutut di sawah tapi sieun ku kalangkang langit dina cai.',
+        aksaraText1: 'ᮓᮤ ᮠᮤᮏᮤ ᮝᮊ᮪ᮒᮥ, ᮞᮤ ᮊᮘᮚᮔ᮪ ᮓᮤᮒᮤᮒᮂ ᮊᮥ ᮙᮤᮒᮧᮠᮔ ᮍᮜ ᮒᮥᮒᮥᮒ᮪ ᮓᮤ ᮞᮝᮂ. ᮒᮥᮒᮥᮒ᮪ ᮒᮦᮂ ᮊᮛᮤ ᮍᮜᮃᮔ᮪ ᮓᮤᮔ ᮎᮄ ᮔᮥ ᮠᮦᮛᮀ.',
+        latinText1: 'Dina hiji poé, Si Kabayan dititah ku mitohana ngala tutut di sawah. Tutut téh kari ngalaan dina cai anu hérang pisan.',
+        aksaraText2: 'ᮒ Tapi ᮞᮤ ᮊᮘᮚᮔ᮪ ᮙᮜᮃᮂ ᮍᮧᮏᮨᮊ᮪ ᮕᮊᮦ ᮒᮥᮀᮊᮥᮜ᮪ ᮞᮘᮘ᮪ ᮍᮜᮤᮃᮒ᮪ ᮜᮔ᮪ᮌᮤᮒ᮪ ᮓᮤᮔ ᮎᮄ ᮞᮝᮂ. ᮘᮒᮤ ᮎᮄ ᮞᮝᮂ ᮏᮨᮛᮧ ᮕᮤᮞᮔ᮪ ᮎᮨᮔᮂ.',
+        latinText2: 'Tapi Si Kabayan kalahka ngajanteng di galengan sawah, ceuk manéhna: Jerona cai sawah téh, ningali langit aya di handap!',
+        latinText3: 'Mitohana anu keuheul tuluy nyurungkeun Si Kabayan kana sawah. Gebyur! Si Kabayan reuwas sabab caina ngan sakeluheun mumuncangan.',
+        xpReward: 50,
+        coinReward: 10,
+    },
+    {
+        id: 2,
+        title: 'Lutung Kasarung',
+        region: 'Jawa Barat',
+        readTime: '5 Menit',
+        difficulty: 'Menengah',
+        cost: 50, // Dibeli menggunakan 50 koin
+        icon: '🐒',
+        summary: 'Kisah Guruminda nu menjelma jadi lutung hideung pikeun nulungan Putri Purbasari nu dihianat ku rakana.',
+        aksaraText1: 'ᮕᮥᮁᮘᮞᮛᮤ ᮓᮤᮒᮥᮜᮥᮍᮔ᮪ ᮊᮥ ᮜᮥᮒᮥᮀ ᮊᮞᮛᮥᮀ ᮓᮤ ᮜᮨᮝᮨᮀ.',
+        latinText1: 'Purbasari ditulungan ku Lutung Kasarung di leuweung. Lutung téh sajatina pangéran Guruminda ti Kahyangan.',
+        latinText2: 'Ku kasobaran Purbasari, manéhna akhirna bisa balik deui ka karaton Pasir Batang jadi ratu anu adil tur bijaksana.',
+        latinText3: 'Pesan Moral: Kebaikan dan ketulusan hati akan selalu menang melawan kelicikan.',
+        xpReward: 75,
+        coinReward: 15,
+    },
+    {
+        id: 3,
+        title: 'Sangkuriang & Tangkuban Parahu',
+        region: 'Jawa Barat',
+        readTime: '7 Menit',
+        difficulty: 'Menengah',
+        cost: 75,
+        icon: '🏔️',
+        summary: 'Sasakala gunung Tangkuban Parahu jeung kapal laut nu ditendang ku Sangkuriang.',
+        aksaraText1: 'ᮞᮀᮊᮥᮛᮤᮃᮀ ᮍᮏᮩᮔ᮪ ᮕᮛᮠᮥ ᮓᮤᮔ ᮞᮕᮧᮈ.',
+        latinText1: 'Sangkuriang nyieun parahu dina waktu sapeuting pikeun nyumponan pamenta Dayang Sumbi.',
+        latinText2: 'Dayang Sumbi ngaburalkeun lawon bodas di beulah wétan sangkan disangka geus fajar.',
+        latinText3: 'Pesan Moral: Jangan memaksakan kehendak dan hormati orang tua.',
+        xpReward: 100,
+        coinReward: 20,
+    },
+    {
+        id: 4,
+        title: 'Ciung Wanara',
+        region: 'Jawa Barat',
+        readTime: '6 Menit',
+        difficulty: 'Mahir',
+        cost: 100,
+        icon: '🐓',
+        summary: 'Kisah pahlawan karajaan Galuh nu gaduh hayam aduan sakti pikeun nungtut kaadilan.',
+        aksaraText1: 'ᮎᮤᮅᮀ ᮝᮔᮛ 001 hayam aduan sakti.',
+        latinText1: 'Ciung Wanara mawa hayam jago sakti ka karaton Galuh pikeun ngalawan hayam raja.',
+        latinText2: 'Adu hayam jadi jalan ngungkab kajahatan jeung mulangkeun kahormatan indungna.',
+        latinText3: 'Pesan Moral: Kebenaran pasti akan terungkap pada waktunya.',
+        xpReward: 100,
+        coinReward: 25,
+    }
+];
+
+const showStoryModal = ref(false);
+const selectedStory = ref(null);
+
+function isStoryUnlocked(storyId) {
+    return storyId === 1 || unlockedStoryIds.value.includes(storyId);
+}
+
+function openStoryReader(story) {
+    if (!isStoryUnlocked(story.id)) return;
+    selectedStory.value = story;
+    showStoryModal.value = true;
+}
+
+async function unlockStoryWithCoins(story) {
+    if (userCoins.value < story.cost) {
+        showToast(`⚠️ Koin tidak cukup! Butuh ${story.cost} koin (kamu punya ${userCoins.value} koin).`);
+        return;
+    }
+
+    try {
+        const res = await axios.post('/api/gamification/unlock-story', {
+            story_id: story.id,
+            cost: story.cost,
+        });
+        if (res.data.success) {
+            updateGamificationState(res.data.state);
+            showToast(`🎉 Dongeng "${story.title}" berhasil dibuka!`);
+        }
+    } catch (err) {
+        console.error('Gagal membuka dongeng:', err);
+        showToast(err.response?.data?.message || 'Gagal membuka dongeng.');
+    }
+}
+
+function handleStoryCompleted(result) {
+    if (result && result.state) {
+        updateGamificationState(result.state);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE SYNC METHOD
+// ═══════════════════════════════════════════════════════════════════
+function updateGamificationState(state) {
+    if (!state) return;
+    if (state.user) {
+        userCoins.value = state.user.coins;
+        userXP.value = state.user.xp;
+        userLevel.value = state.user.level;
+        userStreak.value = state.user.streak;
+    }
+    if (state.levels) {
+        levels.value = state.levels;
+    }
+    if (state.missions) {
+        missions.value = state.missions;
+    }
+    if (state.unlockedStoryIds) {
+        unlockedStoryIds.value = state.unlockedStoryIds;
+    }
+    if (state.bonusClaimed !== undefined) {
+        bonusClaimed.value = state.bonusClaimed;
+    }
+}
+
 // CanvasModal State
 const showCanvasModal = ref(false);
 const selectedCanvasChar = ref('ᮊ');
 const selectedCanvasLatin = ref('Ka');
-const userXP = ref(145);
+
+// StrokeGuideModal State (Panduan Animasi Khusus Huruf Ka 77)
+const showStrokeGuideModal = ref(false);
 
 function openModalForChar(item) {
     selectedCanvasChar.value = item.char;
@@ -30,8 +288,21 @@ function openModalForChar(item) {
     showCanvasModal.value = true;
 }
 
+function handleStartPracticeFromGuide() {
+    const kaItem = sundaGrid.find(item => item.latin === 'Ka') || { char: 'ᮊ', latin: 'Ka' };
+    openModalForChar(kaItem);
+}
+
 function handleXpGained(amount) {
     userXP.value += amount;
+}
+
+function handleCoinsUpdated(coins) {
+    userCoins.value = coins;
+}
+
+function handleGamificationUpdated(state) {
+    updateGamificationState(state);
 }
 
 // QuizModal State
@@ -47,45 +318,31 @@ function openQuizForLevel(level) {
 }
 
 function handleLevelCompleted(result) {
-    // Update the level that was just completed
-    const completedLevel = defaultLevels.value.find(l => l.id === result.levelId);
-    if (completedLevel) {
-        completedLevel.status = 'completed';
-        completedLevel.stars = Math.max(completedLevel.stars, result.stars);
-        completedLevel.icon = '⭐';
-        completedLevel.color = 'from-emerald-400 to-green-500';
+    if (result && result.state) {
+        updateGamificationState(result.state);
+    } else {
+        // Fallback local update
+        const completedLevel = levels.value.find(l => l.id === result.levelId);
+        if (completedLevel) {
+            completedLevel.status = 'completed';
+            completedLevel.stars = Math.max(completedLevel.stars, result.stars);
+            completedLevel.icon = '⭐';
+            completedLevel.color = 'from-emerald-400 to-green-500';
+        }
+        const nextLevel = levels.value.find(l => l.id === result.levelId + 1);
+        if (nextLevel && nextLevel.status === 'locked') {
+            nextLevel.status = 'active';
+            nextLevel.icon = '🚀';
+            nextLevel.color = 'from-[#FF4D30] to-orange-500';
+        }
     }
+}
 
-    // Unlock the next level
-    const nextLevel = defaultLevels.value.find(l => l.id === result.levelId + 1);
-    if (nextLevel && nextLevel.status === 'locked') {
-        nextLevel.status = 'active';
-        nextLevel.icon = '🚀';
-        nextLevel.color = 'from-[#FF4D30] to-orange-500';
+function startLevel(level) {
+    if (level.status !== 'locked') {
+        openQuizForLevel(level);
     }
-
-    // Update "X / 6 Selesai" counter
-    completedLevelsCount.value = defaultLevels.value.filter(l => l.status === 'completed').length;
 }
-
-function handleQuizXpGained(amount) {
-    userXP.value += amount;
-}
-
-// Misi harian state
-const missions = ref([
-    { id: 1, title: 'Belajar 3 Karakter Aksara Sunda', reward: 50, completed: true },
-    { id: 2, title: 'Latihan Nulis 1 Karakter di Canvas', reward: 30, completed: false },
-    { id: 3, title: 'Baca 1 Cerita Rakyat Sunda', reward: 100, completed: false },
-]);
-
-function toggleMission(mission) {
-    mission.completed = !mission.completed;
-}
-
-const completedMissionsCount = computed(() => {
-    return missions.value.filter(m => m.completed).length;
-});
 
 // Leaderboard Singkat (Top Jawara Aksara Sunda)
 const leaderboard = [
@@ -113,136 +370,6 @@ const sundaGrid = [
     { char: 'ᮞ', latin: 'Sa', category: 'Ngalagena' },
     { char: 'ᮠ', latin: 'Ha', category: 'Ngalagena' },
 ];
-
-// Level Nodes Data (Khusus Aksara Sunda) — reactive so we can unlock levels dynamically
-const defaultLevels = ref([
-    {
-        id: 1,
-        title: 'Level 1: Swara Aksara Sunda',
-        subtitle: 'a, i, u, é, o, e, eu',
-        status: 'completed',
-        stars: 3,
-        icon: '⭐',
-        color: 'from-emerald-400 to-green-500',
-    },
-    {
-        id: 2,
-        title: 'Level 2: Ngalagena Dasar 1',
-        subtitle: 'ka, ga, nga, ca, ja, nya',
-        status: 'active',
-        stars: 0,
-        icon: '🚀',
-        color: 'from-[#FF4D30] to-orange-500',
-    },
-    {
-        id: 3,
-        title: 'Level 3: Ngalagena Dasar 2',
-        subtitle: 'ta, da, na, pa, ba, ma',
-        status: 'locked',
-        stars: 0,
-        icon: '🔒',
-        color: 'from-slate-300 to-slate-400',
-    },
-    {
-        id: 4,
-        title: 'Level 4: Rarangkén Vokal',
-        subtitle: 'Panghulu, Pamepet, Paneuleung',
-        status: 'locked',
-        stars: 0,
-        icon: '🔒',
-        color: 'from-slate-300 to-slate-400',
-    },
-    {
-        id: 5,
-        title: 'Level 5: Angka Sunda',
-        subtitle: 'Angka 1 - 10',
-        status: 'locked',
-        stars: 0,
-        icon: '🔒',
-        color: 'from-slate-300 to-slate-400',
-    },
-    {
-        id: 6,
-        title: 'Level 6: Ujian Jawara Aksara',
-        subtitle: 'Bos Final Aksara Sunda',
-        status: 'locked',
-        stars: 0,
-        icon: '👑🔒',
-        color: 'from-amber-400 to-yellow-500',
-    },
-]);
-
-const completedLevelsCount = ref(defaultLevels.value.filter(l => l.status === 'completed').length);
-
-const levels = computed(() => {
-    if (props.userProgress && props.userProgress.length > 0) {
-        return defaultLevels.value.map(level => {
-            const prog = props.userProgress.find(p => p.character_id === level.id);
-            if (prog) {
-                return {
-                    ...level,
-                    status: prog.is_mastered ? 'completed' : (prog.is_learned ? 'active' : 'locked'),
-                };
-            }
-            return level;
-        });
-    }
-    return defaultLevels.value;
-});
-
-// Cerita Rakyat Sunda Data
-const sundaFolktales = [
-    {
-        id: 1,
-        title: 'Si Kabayan Ngala Tutut',
-        region: 'Jawa Barat',
-        readTime: '3 Menit',
-        difficulty: 'Pemula',
-        unlocked: true,
-        icon: '👨‍🌾',
-        summary: 'Dongeng lucu Si Kabayan anu disuruh ku mitoha ngala tutut di sawah.',
-        xpReward: 50
-    },
-    {
-        id: 2,
-        title: 'Lutung Kasarung',
-        region: 'Jawa Barat',
-        readTime: '5 Menit',
-        difficulty: 'Menengah',
-        unlocked: true,
-        icon: '🐒',
-        summary: 'Kisah Guruminda nu menjelma jadi lutung hideung pikeun nulungan Purbasari.',
-        xpReward: 75
-    },
-    {
-        id: 3,
-        title: 'Sangkuriang & Tangkuban Parahu',
-        region: 'Jawa Barat',
-        readTime: '7 Menit',
-        difficulty: 'Menengah',
-        unlocked: false,
-        icon: '🏔️',
-        summary: 'Sasakala gunung Tangkuban Parahu jeung kapal laut nu ditendang ku Sangkuriang.',
-        xpReward: 100
-    },
-    {
-        id: 4,
-        title: 'Ciung Wanara',
-        region: 'Jawa Barat',
-        readTime: '6 Menit',
-        difficulty: 'Mahir',
-        unlocked: false,
-        icon: '🐓',
-        summary: 'Kisah pahlawan karajaan Galuh nu gaduh hayam aduan sakti.',
-        xpReward: 100
-    }
-];
-
-function startLevel(level) {
-    if (level.status !== 'locked') {
-        openQuizForLevel(level);
-    }
-}
 </script>
 
 <template>
@@ -275,7 +402,7 @@ function startLevel(level) {
                                     {{ $page.props.auth.user.name }}
                                 </h1>
                                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-extrabold bg-yellow-100 text-yellow-800 border border-yellow-300">
-                                    ⭐ Level {{ $page.props.auth.user.level || 3 }} - Jawara Sunda
+                                    ⭐ Level {{ userLevel }} - Jawara Sunda
                                 </span>
                             </div>
                         </div>
@@ -298,10 +425,13 @@ function startLevel(level) {
                                 <div class="w-20 sm:w-28">
                                     <div class="flex justify-between text-[10px] font-extrabold text-purple-700 mb-0.5">
                                         <span class="hidden sm:inline">XP</span>
-                                        <span>{{ userXP }}/200</span>
+                                        <span>{{ userCurrentLevelXp }}/100</span>
                                     </div>
                                     <div class="w-full h-2 sm:h-2.5 bg-purple-200 rounded-full overflow-hidden">
-                                        <div class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full" style="width: 72%"></div>
+                                        <div
+                                            class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
+                                            :style="{ width: userXpPercent + '%' }"
+                                        ></div>
                                     </div>
                                 </div>
                             </div>
@@ -309,13 +439,13 @@ function startLevel(level) {
                             <!-- Streak Hari -->
                             <div class="flex items-center gap-1 bg-orange-100 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-2 border-orange-300 text-orange-700 font-extrabold text-xs sm:text-sm shadow-sm shrink-0">
                                 <span class="text-base sm:text-xl animate-pulse">🔥</span>
-                                <span>{{ $page.props.auth.user.streak || 7 }} <span class="hidden sm:inline">Hari</span></span>
+                                <span>{{ userStreak }} <span class="hidden sm:inline">Hari</span></span>
                             </div>
 
                             <!-- Koin Budaya -->
                             <div class="flex items-center gap-1 bg-amber-100 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-2 border-amber-300 text-amber-800 font-extrabold text-xs sm:text-sm shadow-sm shrink-0">
                                 <span class="text-base sm:text-xl">🪙</span>
-                                <span>250</span>
+                                <span>{{ userCoins }}</span>
                             </div>
 
                             <!-- Desktop Actions -->
@@ -494,7 +624,7 @@ function startLevel(level) {
                     <!-- KOLOM KANAN: MISI HARIAN + LEADERBOARD (4 COLS) -->
                     <div class="lg:col-span-4 space-y-6">
 
-                        <!-- WIDGET 1: MISI HARIAN -->
+                        <!-- WIDGET 1: MISI HARIAN (OTOMATIS) -->
                         <div class="bg-white rounded-3xl p-5 sm:p-6 border-3 border-amber-300 shadow-lg">
                             <div class="flex items-center justify-between mb-3.5">
                                 <div class="flex items-center gap-2">
@@ -510,30 +640,60 @@ function startLevel(level) {
                                 <div
                                     v-for="mission in missions"
                                     :key="mission.id"
-                                    @click="toggleMission(mission)"
-                                    class="flex items-center justify-between p-3 rounded-2xl border-2 transition cursor-pointer select-none"
-                                    :class="mission.completed ? 'bg-emerald-50/90 border-emerald-300 shadow-sm' : 'bg-orange-50/50 border-orange-200 hover:border-amber-400'"
+                                    class="flex items-center justify-between p-3 rounded-2xl border-2 transition select-none"
+                                    :class="mission.completed ? 'bg-emerald-50/90 border-emerald-300 shadow-sm' : 'bg-orange-50/50 border-orange-200'"
                                 >
                                     <div class="flex items-center gap-3">
                                         <div
                                             class="w-6 h-6 rounded-lg border-2 flex items-center justify-center text-xs font-black transition"
-                                            :class="mission.completed ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm' : 'border-orange-300 bg-white'"
+                                            :class="mission.completed ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm' : 'border-orange-300 bg-white text-gray-300'"
                                         >
                                             {{ mission.completed ? '✓' : '' }}
                                         </div>
-                                        <span class="text-xs font-bold" :class="mission.completed ? 'line-through text-gray-400' : 'text-gray-800'">
-                                            {{ mission.title }}
-                                        </span>
+                                        <div>
+                                            <span class="text-xs font-bold block" :class="mission.completed ? 'line-through text-gray-400' : 'text-gray-800'">
+                                                {{ mission.title }}
+                                            </span>
+                                            <span class="text-[10px] font-bold" :class="mission.completed ? 'text-emerald-600' : 'text-orange-500'">
+                                                {{ mission.completed ? 'Selesai otomatis' : 'Otomatis saat dikerjakan' }}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <span class="text-[11px] font-extrabold text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1 shrink-0">
+                                    <span class="text-[11px] font-extrabold px-2 py-0.5 rounded-lg flex items-center gap-1 shrink-0"
+                                        :class="mission.completed ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'text-amber-700 bg-amber-100 border border-amber-300'"
+                                    >
                                         🪙 +{{ mission.reward }}
                                     </span>
                                 </div>
                             </div>
 
-                            <div class="mt-3.5 pt-3 border-t-2 border-dashed border-amber-200 flex items-center justify-between text-xs text-gray-600 font-bold">
-                                <span>Bonus Semua Misi:</span>
-                                <span class="text-[#FF4D30] font-extrabold">🎁 Box Hadiah Rahasia!</span>
+                            <div class="mt-3.5 pt-3 border-t-2 border-dashed border-amber-200 flex flex-col gap-2">
+                                <div class="flex items-center justify-between text-xs text-gray-600 font-bold">
+                                    <span>Bonus Semua Misi:</span>
+                                    <span class="text-[#FF4D30] font-extrabold">+50 XP & +30 🪙</span>
+                                </div>
+
+                                <button
+                                    v-if="allMissionsCompleted && !bonusClaimed"
+                                    @click="claimSpecialBonus"
+                                    :disabled="isClaimingBonus"
+                                    class="w-full py-2.5 bg-gradient-to-r from-amber-500 to-[#FF4D30] hover:from-amber-600 hover:to-orange-600 text-white font-black text-xs rounded-xl shadow-md border-2 border-orange-700 active:translate-y-0.5 transition flex items-center justify-center gap-2 cursor-pointer animate-pulse"
+                                >
+                                    <span>🎁</span>
+                                    <span>{{ isClaimingBonus ? 'Mengklaim...' : 'Buka Hadiah Spesial Box!' }}</span>
+                                </button>
+                                <div
+                                    v-else-if="bonusClaimed"
+                                    class="w-full py-2 bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-extrabold rounded-xl text-center"
+                                >
+                                    ✓ Hadiah Spesial Hari Ini Sudah Diambil! 🎁
+                                </div>
+                                <div
+                                    v-else
+                                    class="text-[11px] text-gray-500 font-semibold text-center italic"
+                                >
+                                    Selesaikan ketiga misi harian untuk membuka box rahasia!
+                                </div>
                             </div>
                         </div>
 
@@ -595,8 +755,26 @@ function startLevel(level) {
                         </div>
                         <h2 class="text-2xl sm:text-3xl font-extrabold text-gray-900">Pilih Huruf untuk Berlatih Nulis</h2>
                         <p class="text-xs sm:text-sm text-gray-600 font-semibold mt-1">
-                            Klik salah satu kartu huruf Aksara Sunda di bawah ini untuk membuka modal panduan & canvas latihan!
+                            Klik salah satu kartu huruf Aksara Sunda di bawah ini untuk membuka modal canvas latihan!
                         </p>
+                    </div>
+
+                    <!-- Tombol Khusus di Luar Grid: Panduan Menulis Animasi (Bentuk 77) -->
+                    <div class="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-orange-100/90 via-amber-100/80 to-orange-100/90 p-3.5 sm:p-4 rounded-2xl border-2 border-orange-200 mb-6 shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl sm:text-3xl p-2 bg-white rounded-xl shadow-xs border border-orange-200">🎬</span>
+                            <div>
+                                <h4 class="text-xs sm:text-sm font-black text-gray-800">Panduan Menulis Aksara</h4>
+                                <p class="text-[11px] text-gray-600 font-semibold">Tonton animasi gerakan langkah demi langkah bentuk 77 (Ka).</p>
+                            </div>
+                        </div>
+                        <button
+                            @click="showStrokeGuideModal = true"
+                            class="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-[#FF4D30] hover:from-amber-600 hover:to-orange-600 text-white font-black text-xs rounded-xl border-2 border-orange-700 border-b-4 shadow-[0_2px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all cursor-pointer flex items-center gap-1.5 hover:scale-105"
+                        >
+                            <span>▶</span>
+                            <span>Panduan Menulis (Animasi)</span>
+                        </button>
                     </div>
 
                     <!-- Character Card Grid for Canvas Modal Trigger -->
@@ -665,7 +843,7 @@ function startLevel(level) {
                             v-for="story in sundaFolktales"
                             :key="story.id"
                             class="bg-teal-50/60 rounded-3xl p-6 border-3 transition-all duration-200 flex flex-col justify-between"
-                            :class="story.unlocked ? 'border-teal-300 shadow-md hover:scale-[1.02]' : 'border-gray-300 opacity-75 bg-gray-50'"
+                            :class="isStoryUnlocked(story.id) ? 'border-teal-300 shadow-md hover:scale-[1.02]' : 'border-amber-300/80 bg-amber-50/30'"
                         >
                             <div>
                                 <div class="flex items-center justify-between mb-3">
@@ -674,9 +852,9 @@ function startLevel(level) {
                                     </span>
                                     <span
                                         class="px-2.5 py-1 rounded-full text-xs font-extrabold border"
-                                        :class="story.unlocked ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-gray-200 text-gray-600 border-gray-300'"
+                                        :class="isStoryUnlocked(story.id) ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-900 border-amber-300'"
                                     >
-                                        {{ story.unlocked ? '🗝️ Terbuka' : '🔒 Terkunci' }}
+                                        {{ isStoryUnlocked(story.id) ? '🗝️ Terbuka (Gratis / Dibeli)' : `🔒 Butuh ${story.cost} 🪙` }}
                                     </span>
                                 </div>
 
@@ -696,19 +874,19 @@ function startLevel(level) {
                                     </span>
                                 </div>
 
-                                <Link
-                                    v-if="story.unlocked"
-                                    :href="`/folktales/${story.id}`"
-                                    class="block w-full py-3 bg-teal-500 hover:bg-teal-600 text-white font-extrabold text-xs rounded-2xl border-2 border-teal-700 border-b-4 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all text-center cursor-pointer"
+                                <button
+                                    v-if="isStoryUnlocked(story.id)"
+                                    @click="openStoryReader(story)"
+                                    class="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white font-extrabold text-xs rounded-2xl border-2 border-teal-700 border-b-4 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
                                 >
-                                    Baca Cerita 📖
-                                </Link>
+                                    <span>Baca Dongeng 📖</span>
+                                </button>
                                 <button
                                     v-else
-                                    disabled
-                                    class="w-full py-3 bg-gray-200 text-gray-500 font-extrabold text-xs rounded-2xl border-2 border-gray-300 cursor-not-allowed text-center"
+                                    @click="unlockStoryWithCoins(story)"
+                                    class="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs rounded-2xl border-2 border-orange-700 border-b-4 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
                                 >
-                                    Terkunci (Level Lebih Tinggi) 🔒
+                                    <span>🔓 Beli Cerita ({{ story.cost }} 🪙)</span>
                                 </button>
                             </div>
                         </div>
@@ -777,19 +955,54 @@ function startLevel(level) {
             :latin="selectedCanvasLatin"
             @close="showCanvasModal = false"
             @xpGained="handleXpGained"
+            @gamificationUpdated="handleGamificationUpdated"
         />
 
         <!-- ═══════════════════════════════════════════════════════ -->
-        <!-- 6. QUIZ MODAL POPUP                                    -->
+        <!-- 5B. STROKE GUIDE MODAL POPUP (ANIMASI BENTUK 77)        -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <StrokeGuideModal
+            :show="showStrokeGuideModal"
+            @close="showStrokeGuideModal = false"
+            @startPractice="handleStartPracticeFromGuide"
+        />
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 6. QUIZ MODAL POPUP (ALUR SOAL & GAMIFIKASI)            -->
         <!-- ═══════════════════════════════════════════════════════ -->
         <QuizModal
             :show="showQuizModal"
             :levelId="quizLevelId"
             :levelTitle="quizLevelTitle"
+            :userCoins="userCoins"
             @close="showQuizModal = false"
             @levelCompleted="handleLevelCompleted"
-            @xpGained="handleQuizXpGained"
+            @xpGained="handleXpGained"
+            @coinsUpdated="handleCoinsUpdated"
         />
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 7. STORY READER MODAL (DONGENG SUNDA LENGKAP)          -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <StoryReaderModal
+            :show="showStoryModal"
+            :story="selectedStory"
+            @close="showStoryModal = false"
+            @storyCompleted="handleStoryCompleted"
+        />
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 8. FLOATING REWARD & LEVEL-UP TOAST NOTIFICATION       -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <Transition name="fade">
+            <div
+                v-if="toastMessage"
+                class="fixed top-20 right-4 sm:right-8 z-50 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white font-black text-xs sm:text-sm px-4 py-3 rounded-2xl shadow-2xl border-2 border-white flex items-center gap-2.5 animate-bounce"
+            >
+                <span class="text-xl">🎉</span>
+                <span>{{ toastMessage }}</span>
+            </div>
+        </Transition>
 
     </div>
 </template>
