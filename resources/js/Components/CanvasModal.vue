@@ -1,5 +1,7 @@
 <script setup>
-import { ref, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
+import axios from 'axios';
+import { playSundaAudio } from '@/Utils/audioPlayer';
 
 const props = defineProps({
     show: {
@@ -10,75 +12,105 @@ const props = defineProps({
         type: String,
         default: 'ᮊ',
     },
+    display: {
+        type: String,
+        default: '',
+    },
     latin: {
         type: String,
         default: 'Ka',
     }
 });
 
-const emit = defineEmits(['close', 'xpGained']);
+const emit = defineEmits(['close', 'xpGained', 'gamificationUpdated']);
+
+const renderText = computed(() => {
+    return props.display || props.character;
+});
 
 // ─── DICTIONARY CONFIG HURUF (CHARACTER_CONFIGS) ───
+// Vokal sederhana -> paddingStroke: 10
+// Konsonan & Angka -> paddingStroke: 12 (zona toleransi coretan anak SD)
+// Rarangkén -> paddingStroke: 14
 const CHARACTER_CONFIGS = {
-    'ᮃ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮄ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮅ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮈ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮇ': { fontSize: 130, strokeWidth: 28, offsetY: 0 },
-    'ᮊ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮌ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮎ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮏ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮓ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮔ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮕ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮘ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮙ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮞ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
-    'ᮠ': { fontSize: 125, strokeWidth: 26, offsetY: 2 },
+    // 1. Vokal Mandiri (Swara)
+    'ᮃ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮄ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮅ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮈ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮇ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮉ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    'ᮆ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    // 2. Konsonan Utama & Serapan (Ngalagena)
+    'ᮊ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮌ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮍ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮎ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮏ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮑ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮒ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮓ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮔ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮕ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮘ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮙ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮞ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮠ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮚ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮛ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮜ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮝ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮖ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮗ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮐ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮋ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮮ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    // 3. Aksara Angka (Wilangan 0-9)
+    '᮰': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮱': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮲': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮳': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮴': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮵': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮶': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮷': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮸': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮹': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
 };
 
-const DEFAULT_CONFIG = { fontSize: 130, strokeWidth: 28, offsetY: 0 };
+const DEFAULT_CONFIG = { fontSize: 120, paddingStroke: 13, offsetY: 0 };
 
-// Tab state: 'guide' | 'practice'
-const activeTab = ref('guide');
+const currentConfig = computed(() => {
+    return CHARACTER_CONFIGS[props.character] || DEFAULT_CONFIG;
+});
 
 // Audio / Speech State
 const isSpeaking = ref(false);
 
-// Canvas & Drawing State
+// Canvas & Drawing State (Satu Warna Standar & Satu Ukuran Kuas Standar)
 const canvasRef = ref(null);
 const isDrawing = ref(false);
-const currentColor = ref('#FF4D30');
-const currentSize = ref(16); // Default brush size
+const currentColor = '#1e293b'; // Warna hitam pekat standar (#1e293b)
+const currentSize = 14;         // Kunci ketebalan kuas standar 14px
 const userStrokeCount = ref(0);
 
 // Validation Result State
 const validationResult = ref(null);
 
-// Guide Animation State
-const animationKey = ref(0);
-
-const colors = ['#FF4D30', '#10B981', '#6366F1', '#F59E0B', '#111827'];
-
-// Audio Pronunciation
+// Audio Pronunciation (Edge-TTS Sundanese su-ID-JajangNeural)
 function speakCharacter() {
     isSpeaking.value = true;
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(props.latin);
-        utterance.lang = 'id-ID';
-        utterance.rate = 0.85;
-        utterance.pitch = 1.2;
-        utterance.onend = () => { isSpeaking.value = false; };
-        window.speechSynthesis.speak(utterance);
-    } else {
-        setTimeout(() => { isSpeaking.value = false; }, 800);
-    }
-}
-
-function restartGuideAnimation() {
-    animationKey.value++;
+    playSundaAudio(props.latin, {
+        onStart: () => {
+            isSpeaking.value = true;
+        },
+        onEnd: () => {
+            isSpeaking.value = false;
+        },
+        onError: () => {
+            isSpeaking.value = false;
+        },
+    });
 }
 
 // Canvas Position Helper (Fixed Math & Touch Scaling)
@@ -108,6 +140,10 @@ function startDrawing(e) {
     isDrawing.value = true;
     userStrokeCount.value++;
     const ctx = canvasRef.value.getContext('2d', { willReadFrequently: true });
+    ctx.lineWidth = 14;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = currentColor;
     const pos = getPos(e);
     ctx.beginPath();
     ctx.moveTo(pos.x, pos.y);
@@ -117,12 +153,12 @@ function draw(e) {
     if (!isDrawing.value) return;
     e.preventDefault();
     const ctx = canvasRef.value.getContext('2d', { willReadFrequently: true });
-    const pos = getPos(e);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.strokeStyle = currentColor.value;
-    ctx.lineWidth = currentSize.value;
+    ctx.lineWidth = 14;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.strokeStyle = currentColor;
+    const pos = getPos(e);
+    ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
 }
 
@@ -162,17 +198,23 @@ function validateStroke() {
 
     maskCtx.clearRect(0, 0, width, height);
 
-    // Dynamic Target Mask Properties
+    // Dynamic Target Mask Properties (Solid letter fill + outer padding stroke boundary)
+    maskCtx.fillStyle = '#000000';
     maskCtx.strokeStyle = '#000000';
-    maskCtx.lineWidth = config.strokeWidth;
+    maskCtx.lineWidth = config.paddingStroke;
     maskCtx.lineCap = 'round';
     maskCtx.lineJoin = 'round';
     maskCtx.font = `bold ${config.fontSize}px sans-serif`;
     maskCtx.textAlign = 'center';
     maskCtx.textBaseline = 'middle';
 
-    // RENDER DYNAMIC STROKE MASK (No fillText)
-    maskCtx.strokeText(props.character, width / 2, (height / 2) + config.offsetY);
+    const targetX = width / 2;
+    const targetY = (height / 2) + config.offsetY;
+
+    // 1. Fill solid character body
+    maskCtx.fillText(renderText.value, targetX, targetY);
+    // 2. Stroke outer tolerance boundary with paddingStroke
+    maskCtx.strokeText(renderText.value, targetX, targetY);
 
     const maskData = maskCtx.getImageData(0, 0, width, height).data;
 
@@ -186,7 +228,7 @@ function validateStroke() {
         const maskAlpha = maskData[i + 3];
 
         const isUser = userAlpha > 30;
-        const isTarget = maskAlpha > 128; // Dynamic stroke line target pixels
+        const isTarget = maskAlpha > 128; // Dynamic solid letter + tolerance corridor target pixels
 
         if (isTarget) strokeTargetPixels++;
         if (isUser) userPixels++;
@@ -232,6 +274,8 @@ function validateStroke() {
     console.log('[Aksantara Dynamic Tracing Validation]:', {
         huruf: props.character,
         latin: props.latin,
+        fontSize: config.fontSize,
+        paddingStroke: config.paddingStroke,
         configUsed: config,
         canvasSize: `${width}x${height}`,
         totalStrokeTargetPixels: strokeTargetPixels,
@@ -243,14 +287,24 @@ function validateStroke() {
         skorAkurasiAkhir: finalScore + '%'
     });
 
-    if (finalScore >= 80) {
+    if (finalScore >= 70) {
         validationResult.value = {
             score: finalScore,
             success: true,
             message: 'Luar Biasa! Goresanmu Sangat Presisi! 🎉',
-            details: `Akurasi: ${finalScore}% • Jalur Terisi: ${Math.round(recall)}% • Presisi: ${Math.round(precision)}% • Bonus: +10 XP`
+            details: `Akurasi: ${finalScore}% • Jalur Terisi: ${Math.round(recall)}% • Presisi: ${Math.round(precision)}% • Bonus: +15 XP & +5 Koin`
         };
-        emit('xpGained', 10);
+        emit('xpGained', 15);
+        // Otomatisasi Misi Harian Latihan Menulis di Canvas
+        axios.post('/api/gamification/practice-writing')
+            .then(res => {
+                if (res.data.success && res.data.state) {
+                    emit('gamificationUpdated', res.data.state);
+                }
+            })
+            .catch(err => {
+                console.error('Gagal mencatat latihan nulis:', err);
+            });
     } else {
         validationResult.value = {
             score: finalScore,
@@ -263,16 +317,7 @@ function validateStroke() {
 
 watch(() => props.show, (newVal) => {
     if (newVal) {
-        activeTab.value = 'guide';
         validationResult.value = null;
-        nextTick(() => {
-            clearCanvas();
-        });
-    }
-});
-
-watch(activeTab, (newTab) => {
-    if (newTab === 'practice') {
         nextTick(() => {
             clearCanvas();
         });
@@ -295,87 +340,41 @@ watch(activeTab, (newTab) => {
 
             <!-- Character Header -->
             <div class="text-center mb-4">
-                <div class="inline-flex items-center gap-2 px-3 py-1 bg-orange-100 text-[#FF4D30] rounded-full text-xs font-black border border-orange-200 mb-1">
+                <div class="inline-flex items-center gap-2 px-3 py-1 bg-orange-100 text-[#FF4D30] rounded-full text-xs font-black border border-orange-200 mb-1.5 shadow-sm">
                     <span>Latihan Nulis Aksara Sunda</span>
                 </div>
-                <h2 class="text-2xl font-black text-gray-900 flex items-center justify-center gap-2">
-                    <span>Huruf "{{ latin }}"</span>
-                    <span class="text-3xl text-[#FF4D30]">{{ character }}</span>
-                </h2>
-            </div>
-
-            <!-- Tab Switcher Inside Modal -->
-            <div class="flex items-center bg-orange-100/70 p-1.5 rounded-2xl border-2 border-orange-200 mb-5 gap-2">
-                <button
-                    @click="activeTab = 'guide'"
-                    class="flex-1 py-2.5 px-3 rounded-xl font-extrabold text-xs border-2 border-b-4 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                    :class="activeTab === 'guide' ? 'bg-[#FF4D30] text-white border-orange-700 shadow-[0_2px_0_0_rgba(0,0,0,0.15)]' : 'bg-white text-gray-700 border-orange-200 hover:bg-orange-50 active:translate-y-0.5 border-b-2'"
-                >
-                    <span class="text-base">📖</span>
-                    <span>Panduan</span>
-                </button>
-
-                <button
-                    @click="activeTab = 'practice'"
-                    class="flex-1 py-2.5 px-3 rounded-xl font-extrabold text-xs border-2 border-b-4 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                    :class="activeTab === 'practice' ? 'bg-[#FF4D30] text-white border-orange-700 shadow-[0_2px_0_0_rgba(0,0,0,0.15)]' : 'bg-white text-gray-700 border-orange-200 hover:bg-orange-50 active:translate-y-0.5 border-b-2'"
-                >
-                    <span class="text-base">✏️</span>
-                    <span>Latihan</span>
-                </button>
-            </div>
-
-            <!-- TAB 1: PANDUAN (GUIDE TAB) -->
-            <div v-if="activeTab === 'guide'" class="flex flex-col items-center">
-                <div class="relative w-full max-w-xs aspect-square bg-orange-50/70 rounded-3xl border-4 border-orange-200 flex flex-col items-center justify-center p-4 overflow-hidden mb-4 shadow-inner">
-                    <!-- Character Display -->
-                    <span class="text-9xl sm:text-[140px] font-black text-gray-800 select-none">
-                        {{ character }}
-                    </span>
-
-                    <!-- Dotted Arrow Guide Overlay -->
-                    <div :key="animationKey" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <svg class="w-full h-full p-6 text-[#FF4D30] stroke-[#FF4D30] animate-pulse" viewBox="0 0 200 200" fill="none">
-                            <path d="M 40 50 L 160 50 M 100 50 L 100 150" stroke-width="6" stroke-dasharray="8 8" stroke-linecap="round" />
-                            <circle cx="40" cy="50" r="6" fill="#FF4D30" />
-                            <polygon points="160,50 150,45 150,55" fill="#FF4D30" />
-                            <polygon points="100,150 95,140 105,140" fill="#FF4D30" />
-                        </svg>
-                    </div>
-
-                    <span class="absolute bottom-2 text-[11px] font-black text-orange-600 bg-orange-100 px-3 py-0.5 rounded-full border border-orange-300">
-                        Urutan Goresan: 1 ➔ 2 ➔ 3
-                    </span>
-                </div>
-
-                <!-- Audio & Repeat Animation Buttons -->
-                <div class="flex items-center gap-3 w-full max-w-xs">
+                <div class="flex items-center justify-center gap-3">
+                    <h2 class="text-2xl font-black text-gray-900 flex items-center gap-2">
+                        <span>Huruf "{{ latin }}"</span>
+                        <span class="text-3xl text-[#FF4D30]">{{ renderText }}</span>
+                    </h2>
+                    <!-- Audio Pronunciation Button -->
                     <button
                         @click="speakCharacter"
-                        class="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs rounded-2xl border-2 border-purple-800 border-b-4 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                        :disabled="isSpeaking"
+                        class="px-3 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-700 border-2 border-purple-300 font-extrabold text-xs transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 shadow-sm"
+                        title="Dengarkan Lafal"
                     >
-                        <span class="text-base">🔊</span>
-                        <span>Dengarkan Lafal</span>
-                    </button>
-
-                    <button
-                        @click="restartGuideAnimation"
-                        class="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs rounded-2xl border-2 border-orange-700 border-b-4 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                        <span class="text-base">🔄</span>
-                        <span>Ulangi Animasi</span>
+                        <span class="text-sm" :class="{ 'animate-bounce': isSpeaking }">🔊</span>
+                        <span>Dengar</span>
                     </button>
                 </div>
             </div>
 
-            <!-- TAB 2: LATIHAN (PRACTICE CANVAS TAB) -->
-            <div v-else-if="activeTab === 'practice'" class="flex flex-col items-center">
+            <!-- MODUL LATIHAN CANVAS (Langsung Tampil Tanpa Tab) -->
+            <div class="flex flex-col items-center">
                 <!-- HTML5 Canvas Box -->
                 <div class="relative w-full max-w-xs aspect-square bg-orange-50/60 rounded-3xl border-4 border-orange-200 overflow-hidden shadow-inner flex items-center justify-center">
                     <!-- Background Watermark -->
-                    <div class="absolute inset-0 flex items-center justify-center select-none pointer-events-none">
-                        <span class="text-9xl sm:text-[140px] font-bold text-orange-200/60">
-                            {{ character }}
+                    <div
+                        class="absolute inset-0 flex items-center justify-center select-none pointer-events-none"
+                        :style="{ transform: `translateY(${currentConfig.offsetY}px)` }"
+                    >
+                        <span
+                            class="font-bold text-orange-200/60 leading-none select-none"
+                            :style="{ fontSize: `${currentConfig.fontSize}px` }"
+                        >
+                            {{ renderText }}
                         </span>
                     </div>
 
@@ -394,40 +393,13 @@ watch(activeTab, (newTab) => {
                     ></canvas>
                 </div>
 
-                <!-- Brush Color & Size Controls -->
-                <div class="flex items-center justify-between w-full max-w-xs mt-3 gap-2">
-                    <div class="flex items-center gap-1.5 bg-orange-100 p-1.5 rounded-2xl border-2 border-orange-200">
-                        <button
-                            v-for="color in colors"
-                            :key="color"
-                            @click="currentColor = color"
-                            class="w-6 h-6 rounded-xl border-2 transition-transform cursor-pointer"
-                            :style="{ backgroundColor: color }"
-                            :class="currentColor === color ? 'scale-110 border-white ring-2 ring-orange-400' : 'border-transparent opacity-80'"
-                        ></button>
-                    </div>
-
-                    <div class="flex items-center gap-1 bg-orange-100 p-1 rounded-2xl border-2 border-orange-200">
-                        <button
-                            @click="currentSize = 12"
-                            class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition cursor-pointer"
-                            :class="currentSize === 12 ? 'bg-[#FF4D30] text-white shadow' : 'text-gray-600 hover:bg-orange-200'"
-                        >Tipis</button>
-                        <button
-                            @click="currentSize = 22"
-                            class="px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer"
-                            :class="currentSize === 22 ? 'bg-[#FF4D30] text-white shadow' : 'text-gray-600 hover:bg-orange-200'"
-                        >Tebal</button>
-                    </div>
-                </div>
-
                 <!-- Result & Validation Feedback Box -->
-                <div v-if="validationResult" class="mt-3 p-3.5 w-full max-w-xs rounded-2xl border-3 text-center animate-bounce" :class="validationResult.success ? 'bg-emerald-100 border-emerald-400 text-emerald-900' : 'bg-red-100 border-red-400 text-red-900'">
+                <div v-if="validationResult" class="mt-3.5 p-3.5 w-full max-w-xs rounded-2xl border-3 text-center animate-bounce" :class="validationResult.success ? 'bg-emerald-100 border-emerald-400 text-emerald-900' : 'bg-red-100 border-red-400 text-red-900'">
                     <div class="text-sm font-black">{{ validationResult.message }}</div>
                     <div class="text-[11px] font-bold mt-0.5 opacity-90">{{ validationResult.details }}</div>
                 </div>
 
-                <!-- Action Buttons -->
+                <!-- Action Buttons: Hapus & Cek Hasil -->
                 <div class="flex items-center gap-3 w-full max-w-xs mt-4">
                     <button
                         @click="clearCanvas"

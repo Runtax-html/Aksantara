@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { playSundaAudio, isAnyAudioPlaying } from '@/Utils/audioPlayer';
+import { playSundaAudio, stopSundaAudio, isAnyAudioPlaying } from '@/Utils/audioPlayer';
 
 const typedText = ref('');
 const activePronunciation = ref('');
@@ -250,6 +250,11 @@ function speak(text) {
 
 function speakAll() {
     if (!typedText.value.trim()) return;
+    if (isAnyAudioPlaying.value) {
+        stopSundaAudio();
+        return;
+    }
+
     const transliteratedText = getLatinTransliteration(typedText.value);
     activePronunciation.value = transliteratedText;
 
@@ -277,6 +282,7 @@ function addSpace() {
 function clearAll() {
     typedText.value = '';
     activePronunciation.value = '';
+    stopSundaAudio();
 }
 
 function triggerToast(msg) {
@@ -341,7 +347,7 @@ async function shareText() {
                         Papan Ketik Aksara Sunda
                     </h3>
                     <p class="text-[11px] text-gray-500 font-medium">
-                        Ketik aksara ngalagena, swara, & rarangèn dengan mudah
+                        Ketik aksara ngalagena, swara, & rarangèn dengan suara logat Sunda asli (Edge-TTS) 🔊
                     </p>
                 </div>
             </div>
