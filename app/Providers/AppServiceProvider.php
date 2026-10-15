@@ -21,5 +21,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        if (config('database.default') === 'sqlite') {
+            $dbPath = config('database.connections.sqlite.database');
+            if ($dbPath && !file_exists($dbPath) && !str_starts_with($dbPath, ':memory:')) {
+                @touch($dbPath);
+            }
+        }
     }
 }
