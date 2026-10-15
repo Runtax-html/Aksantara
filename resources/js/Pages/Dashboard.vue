@@ -10,6 +10,7 @@ import SpeechPronunciation from '@/Components/SpeechPronunciation.vue';
 import QuizModal from '@/Components/QuizModal.vue';
 import KamusAksara from '@/Components/KamusAksara.vue';
 import StoryReaderModal from '@/Components/StoryReaderModal.vue';
+import StreakModal from '@/Components/StreakModal.vue';
 
 const props = defineProps({
     userProgress: {
@@ -140,6 +141,11 @@ async function claimSpecialBonus() {
 // DONGENG SUNDA BERBASIS KOIN
 // ═══════════════════════════════════════════════════════════════════
 const unlockedStoryIds = ref(props.gamification?.unlockedStoryIds ?? [1]);
+const completedStoryIds = ref(props.gamification?.completedStoryIds ?? props.gamification?.user?.completed_stories ?? []);
+
+function isStoryCompleted(storyId) {
+    return completedStoryIds.value.includes(storyId);
+}
 
 const sundaFolktales = [
     {
@@ -250,6 +256,25 @@ function handleStoryCompleted(result) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// RUNTUTAN BELAJAR (STREAK) & LEADERBOARD DATA
+// ═══════════════════════════════════════════════════════════════════
+const showStreakModal = ref(false);
+const streakData = ref(props.gamification?.streakData ?? {
+    currentStreak: props.gamification?.user?.streak ?? 1,
+    maxStreak: props.gamification?.user?.max_streak ?? 1,
+    hasCheckedInToday: false,
+    weeklyTracker: [],
+});
+
+const defaultLeaderboardData = {
+    top3: [],
+    currentUser: null,
+    isInTop3: false,
+};
+
+const leaderboardData = ref(props.gamification?.leaderboard ?? defaultLeaderboardData);
+
+// ═══════════════════════════════════════════════════════════════════
 // STATE SYNC METHOD
 // ═══════════════════════════════════════════════════════════════════
 function updateGamificationState(state) {
@@ -269,14 +294,33 @@ function updateGamificationState(state) {
     if (state.unlockedStoryIds) {
         unlockedStoryIds.value = state.unlockedStoryIds;
     }
+    if (state.completedStoryIds) {
+        completedStoryIds.value = state.completedStoryIds;
+    } else if (state.user?.completed_stories) {
+        completedStoryIds.value = state.user.completed_stories;
+    }
     if (state.bonusClaimed !== undefined) {
         bonusClaimed.value = state.bonusClaimed;
     }
+    if (state.streakData) {
+        streakData.value = state.streakData;
+    }
+    if (state.leaderboard) {
+        leaderboardData.value = state.leaderboard;
+    }
+}
+
+function handleCheckinSuccess(data) {
+    if (data.state) {
+        updateGamificationState(data.state);
+    }
+    showToast(data.message || 'Check-in harian berhasil! Api belajarmu tetap menyala 🔥');
 }
 
 // CanvasModal State
 const showCanvasModal = ref(false);
 const selectedCanvasChar = ref('ᮊ');
+const selectedCanvasDisplay = ref('ᮊ');
 const selectedCanvasLatin = ref('Ka');
 
 // StrokeGuideModal State (Panduan Animasi Khusus Huruf Ka 77)
@@ -284,14 +328,25 @@ const showStrokeGuideModal = ref(false);
 
 function openModalForChar(item) {
     selectedCanvasChar.value = item.char;
+    selectedCanvasDisplay.value = item.display || item.char;
     selectedCanvasLatin.value = item.latin;
     showCanvasModal.value = true;
 }
 
 function handleStartPracticeFromGuide() {
-    const kaItem = sundaGrid.find(item => item.latin === 'Ka') || { char: 'ᮊ', latin: 'Ka' };
+    const kaItem = sundaGrid.find(item => item.latin === 'Ka') || { char: 'ᮊ', display: 'ᮊ', latin: 'Ka' };
     openModalForChar(kaItem);
 }
+
+// Kategori Filter Coretan / Latihan Nulis
+const coretanCategory = ref('semua'); // 'semua' | 'swara' | 'ngalagena' | 'rarangen' | 'angka'
+
+const filteredSundaGrid = computed(() => {
+    if (coretanCategory.value === 'semua') {
+        return sundaGrid;
+    }
+    return sundaGrid.filter(item => item.category === coretanCategory.value);
+});
 
 function handleXpGained(amount) {
     userXP.value += amount;
@@ -344,31 +399,77 @@ function startLevel(level) {
     }
 }
 
-// Leaderboard Singkat (Top Jawara Aksara Sunda)
-const leaderboard = [
-    { rank: 1, name: 'Budi Santoso', level: 5, xp: 450, avatar: '👑', badge: '🥇 Jawara 1' },
-    { rank: 2, name: 'Ani Suryani', level: 4, xp: 380, avatar: '⭐', badge: '🥈 Jawara 2' },
-    { rank: 3, name: 'Cecep Supriatna', level: 3, xp: 290, avatar: '🚀', badge: '🥉 Jawara 3' },
-];
 
-// Aksara Sunda Grid List for Canvas Modal Selection
+// Aksara Sunda Dataset Lengkap untuk Latihan Menulis (Swara, Ngalagena, Rarangkén, dan Angka)
 const sundaGrid = [
-    { char: 'ᮃ', latin: 'A', category: 'Swara' },
-    { char: 'ᮄ', latin: 'I', category: 'Swara' },
-    { char: 'ᮅ', latin: 'U', category: 'Swara' },
-    { char: 'ᮈ', latin: 'E', category: 'Swara' },
-    { char: 'ᮇ', latin: 'O', category: 'Swara' },
-    { char: 'ᮊ', latin: 'Ka', category: 'Ngalagena' },
-    { char: 'ᮌ', latin: 'Ga', category: 'Ngalagena' },
-    { char: 'ᮎ', latin: 'Ca', category: 'Ngalagena' },
-    { char: 'ᮏ', latin: 'Ja', category: 'Ngalagena' },
-    { char: 'ᮓ', latin: 'Da', category: 'Ngalagena' },
-    { char: 'ᮔ', latin: 'Na', category: 'Ngalagena' },
-    { char: 'ᮕ', latin: 'Pa', category: 'Ngalagena' },
-    { char: 'ᮘ', latin: 'Ba', category: 'Ngalagena' },
-    { char: 'ᮙ', latin: 'Ma', category: 'Ngalagena' },
-    { char: 'ᮞ', latin: 'Sa', category: 'Ngalagena' },
-    { char: 'ᮠ', latin: 'Ha', category: 'Ngalagena' },
+    // ═══════════════════════════════════════════════════════════════
+    // 1. AKSARA SWARA (7 Vokal Mandiri)
+    // ═══════════════════════════════════════════════════════════════
+    { char: 'ᮃ', display: 'ᮃ', latin: 'A', category: 'swara', categoryLabel: 'Swara' },
+    { char: 'ᮄ', display: 'ᮄ', latin: 'I', category: 'swara', categoryLabel: 'Swara' },
+    { char: 'ᮅ', display: 'ᮅ', latin: 'U', category: 'swara', categoryLabel: 'Swara' },
+    { char: 'ᮈ', display: 'ᮈ', latin: 'É', category: 'swara', categoryLabel: 'Swara' },
+    { char: 'ᮇ', display: 'ᮇ', latin: 'O', category: 'swara', categoryLabel: 'Swara' },
+    { char: 'ᮉ', display: 'ᮉ', latin: 'Eu', category: 'swara', categoryLabel: 'Swara' },
+    { char: 'ᮆ', display: 'ᮆ', latin: 'E (Pepet)', category: 'swara', categoryLabel: 'Swara' },
+
+    // ═══════════════════════════════════════════════════════════════
+    // 2. AKSARA NGALAGENA UTAMA & SERAPAN (23 Konsonan)
+    // ═══════════════════════════════════════════════════════════════
+    { char: 'ᮊ', display: 'ᮊ', latin: 'Ka', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮌ', display: 'ᮌ', latin: 'Ga', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮍ', display: 'ᮍ', latin: 'Nga', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮎ', display: 'ᮎ', latin: 'Ca', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮏ', display: 'ᮏ', latin: 'Ja', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮑ', display: 'ᮑ', latin: 'Nya', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮒ', display: 'ᮒ', latin: 'Ta', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮓ', display: 'ᮓ', latin: 'Da', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮔ', display: 'ᮔ', latin: 'Na', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮕ', display: 'ᮕ', latin: 'Pa', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮘ', display: 'ᮘ', latin: 'Ba', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮙ', display: 'ᮙ', latin: 'Ma', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮚ', display: 'ᮚ', latin: 'Ya', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮛ', display: 'ᮛ', latin: 'Ra', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮜ', display: 'ᮜ', latin: 'La', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮝ', display: 'ᮝ', latin: 'Wa', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮞ', display: 'ᮞ', latin: 'Sa', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮠ', display: 'ᮠ', latin: 'Ha', category: 'ngalagena', categoryLabel: 'Ngalagena' },
+    { char: 'ᮖ', display: 'ᮖ', latin: 'Fa', category: 'ngalagena', categoryLabel: 'Ngalagena Serapan' },
+    { char: 'ᮗ', display: 'ᮗ', latin: 'Va', category: 'ngalagena', categoryLabel: 'Ngalagena Serapan' },
+    { char: 'ᮐ', display: 'ᮐ', latin: 'Za', category: 'ngalagena', categoryLabel: 'Ngalagena Serapan' },
+    { char: 'ᮋ', display: 'ᮋ', latin: 'Qa', category: 'ngalagena', categoryLabel: 'Ngalagena Serapan' },
+    { char: 'ᮮ', display: 'ᮮ', latin: 'Kha', category: 'ngalagena', categoryLabel: 'Ngalagena Serapan' },
+
+    // ═══════════════════════════════════════════════════════════════
+    // 3. RARANGKÉN (13 Vokalisasi, Patén & Sisipan)
+    // ═══════════════════════════════════════════════════════════════
+    { char: 'ᮤ', display: '◌ᮤ', latin: 'i (Panghulu)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮥ', display: '◌ᮥ', latin: 'u (Panyuku)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮨ', display: '◌ᮨ', latin: 'e (Pamepet)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮩ', display: '◌ᮩ', latin: 'eu (Paneuleung)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮦ', display: '◌ᮦ', latin: 'é (Panéléng)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮧ', display: '◌ᮧ', latin: 'o (Panolong)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: '᮪', display: '◌᮪', latin: 'Pamaéh (paten)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮀ', display: '◌ᮀ', latin: '+ng (Panyecek)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮁ', display: '◌ᮁ', latin: '+r (Panglayar)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮂ', display: '◌ᮂ', latin: '+h (Pangwisad)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮡ', display: '◌ᮡ', latin: '+ya (Pamingkal)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮢ', display: '◌ᮢ', latin: '+ra (Panyakra)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+    { char: 'ᮣ', display: '◌ᮣ', latin: '+la (Panyiku)', category: 'rarangen', categoryLabel: 'Rarangkén' },
+
+    // ═══════════════════════════════════════════════════════════════
+    // 4. AKSARA ANGKA (10 Wilangan 0-9)
+    // ═══════════════════════════════════════════════════════════════
+    { char: '᮰', display: '᮰', latin: '0 (Nol)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮱', display: '᮱', latin: '1 (Hiji)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮲', display: '᮲', latin: '2 (Dua)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮳', display: '᮳', latin: '3 (Tilu)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮴', display: '᮴', latin: '4 (Opat)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮵', display: '᮵', latin: '5 (Lima)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮶', display: '᮶', latin: '6 (Genep)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮷', display: '᮷', latin: '7 (Tujuh)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮸', display: '᮸', latin: '8 (Dalapan)', category: 'angka', categoryLabel: 'Angka' },
+    { char: '᮹', display: '᮹', latin: '9 (Salapan)', category: 'angka', categoryLabel: 'Angka' },
 ];
 </script>
 
@@ -436,11 +537,15 @@ const sundaGrid = [
                                 </div>
                             </div>
 
-                            <!-- Streak Hari -->
-                            <div class="flex items-center gap-1 bg-orange-100 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-2 border-orange-300 text-orange-700 font-extrabold text-xs sm:text-sm shadow-sm shrink-0">
+                            <!-- Streak Hari (Klik untuk Buka Modal Detail Runtutan Belajar) -->
+                            <button
+                                @click="showStreakModal = true"
+                                class="flex items-center gap-1 bg-orange-100 hover:bg-orange-200 active:scale-95 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-2 border-orange-300 text-orange-700 font-extrabold text-xs sm:text-sm shadow-sm shrink-0 transition cursor-pointer"
+                                title="Lihat detail runtutan belajar"
+                            >
                                 <span class="text-base sm:text-xl animate-pulse">🔥</span>
                                 <span>{{ userStreak }} <span class="hidden sm:inline">Hari</span></span>
-                            </div>
+                            </button>
 
                             <!-- Koin Budaya -->
                             <div class="flex items-center gap-1 bg-amber-100 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-2 border-amber-300 text-amber-800 font-extrabold text-xs sm:text-sm shadow-sm shrink-0">
@@ -466,9 +571,65 @@ const sundaGrid = [
         </header>
 
         <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 1B. CARD RINGKAS RUNTUTAN BELAJAR (STREAK)              -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-5 sm:mt-6">
+            <div
+                @click="showStreakModal = true"
+                class="group bg-gradient-to-r from-amber-400 via-orange-500 to-[#FF4D30] rounded-3xl p-4 sm:p-5 text-white shadow-xl border-4 border-amber-300 hover:shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer flex flex-col sm:flex-row items-center justify-between gap-4 relative overflow-hidden"
+            >
+                <!-- Background Glow & Flame Accent -->
+                <div class="absolute -right-6 -bottom-6 text-7xl opacity-15 select-none pointer-events-none">🔥</div>
+
+                <div class="flex items-center gap-3.5 sm:gap-4 w-full sm:w-auto z-10">
+                    <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-2xl sm:text-3xl shrink-0 shadow-inner group-hover:rotate-6 transition-transform">
+                        🔥
+                    </div>
+                    <div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-xs sm:text-sm font-black uppercase tracking-wider text-amber-100">
+                                Runtutan Belajar
+                            </span>
+                            <span
+                                v-if="streakData?.hasCheckedInToday"
+                                class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-400 text-emerald-950 border border-emerald-200 shadow-xs flex items-center gap-1"
+                            >
+                                <span>✓</span>
+                                <span>Sudah Check-in Hari Ini</span>
+                            </span>
+                            <span
+                                v-else
+                                class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-900/40 text-amber-100 border border-white/30 animate-pulse flex items-center gap-1"
+                            >
+                                <span>⏳</span>
+                                <span>Belum Check-in Hari Ini</span>
+                            </span>
+                        </div>
+                        <div class="text-lg sm:text-2xl font-black tracking-tight leading-tight mt-0.5 flex items-center gap-2">
+                            <span>{{ userStreak }} Hari Beruntun</span>
+                            <span class="text-xs font-bold text-amber-100/90 hidden sm:inline">
+                                • Rekor Terlama: {{ Math.max(streakData?.maxStreak || 0, userStreak) }} Hari 🏆
+                            </span>
+                        </div>
+                        <p class="text-[11px] sm:text-xs text-amber-100/90 font-medium">
+                            {{ streakData?.hasCheckedInToday ? 'Hebat! Ritme belajarmu hari ini terjaga dengan baik.' : 'Klik untuk check-in harian atau selesaikan 1 aktivitas belajar!' }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 w-full sm:w-auto justify-end z-10">
+                    <span class="w-full sm:w-auto text-center text-xs sm:text-sm font-black bg-white text-[#FF4D30] px-4 py-2.5 rounded-2xl shadow-md border-b-2 border-orange-300 group-hover:bg-amber-50 active:translate-y-0.5 transition flex items-center justify-center gap-1.5 shrink-0">
+                        <span>Buka Runtutan Belajar</span>
+                        <span>➔</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
         <!-- 2. DESKTOP TAB SWITCHER (HORIZONTAL MENU 5 PILIHAN)     -->
         <!-- ═══════════════════════════════════════════════════════ -->
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 hidden lg:block">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 sm:mt-5 hidden lg:block">
             <div class="bg-white p-2 rounded-3xl border-4 border-amber-300 shadow-lg flex items-center justify-between gap-2">
                 <!-- 1. Petualangan -->
                 <button
@@ -697,43 +858,83 @@ const sundaGrid = [
                             </div>
                         </div>
 
-                        <!-- WIDGET 2: LEADERBOARD SINGKAT -->
+                        <!-- WIDGET 2: LEADERBOARD JAWARA AKSARA (BERBASIS STREAK) -->
                         <div class="bg-white rounded-3xl p-5 sm:p-6 border-3 border-yellow-300 shadow-lg">
                             <div class="flex items-center justify-between mb-3.5">
                                 <div class="flex items-center gap-2">
                                     <span class="text-2xl">🏆</span>
                                     <h3 class="text-base font-extrabold text-gray-800">Jawara Aksara</h3>
                                 </div>
-                                <span class="text-[11px] font-extrabold text-yellow-800 bg-yellow-100 border border-yellow-300 px-2 py-0.5 rounded-full">
-                                    Minggu Ini
+                                <span class="text-[11px] font-black text-amber-900 bg-gradient-to-r from-amber-200 to-yellow-200 border border-amber-300 px-2.5 py-0.5 rounded-full shadow-xs flex items-center gap-1">
+                                    <span>🔥</span>
+                                    <span>Paling Rajin</span>
                                 </span>
                             </div>
 
+                            <!-- Top 3 List -->
                             <div class="space-y-2.5">
                                 <div
-                                    v-for="user in leaderboard"
+                                    v-for="user in leaderboardData.top3"
                                     :key="user.rank"
-                                    class="flex items-center justify-between p-3 rounded-2xl border-2 bg-yellow-50/50 border-yellow-200"
+                                    class="flex items-center justify-between p-3 rounded-2xl border-2 transition"
+                                    :class="user.is_current_user ? 'bg-orange-50 border-[#FF4D30] shadow-sm ring-2 ring-orange-200' : 'bg-yellow-50/50 border-yellow-200'"
                                 >
                                     <div class="flex items-center gap-2.5">
                                         <span class="text-lg font-black text-amber-800 w-5 text-center">
                                             #{{ user.rank }}
                                         </span>
                                         <div class="w-8 h-8 rounded-xl bg-white border-2 border-yellow-300 flex items-center justify-center text-sm shadow-sm">
-                                            {{ user.avatar }}
+                                            {{ user.avatar || '⭐' }}
                                         </div>
                                         <div>
-                                            <div class="text-xs font-extrabold text-gray-900 leading-tight">
-                                                {{ user.name }}
+                                            <div class="text-xs font-extrabold text-gray-900 leading-tight flex items-center gap-1">
+                                                <span>{{ user.name }}</span>
+                                                <span v-if="user.is_current_user" class="text-[10px] text-[#FF4D30] font-black">(Kamu)</span>
                                             </div>
-                                            <div class="text-[10px] font-extrabold text-amber-700">
-                                                Level {{ user.level }} • {{ user.xp }} XP
+                                            <div class="text-[10px] font-extrabold text-amber-700 flex items-center gap-1">
+                                                <span>🔥</span>
+                                                <span>{{ user.streak_text || (user.streak + ' hari beruntun') }}</span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <span class="text-[10px] font-black px-2 py-0.5 bg-yellow-200 text-yellow-900 rounded-lg border border-yellow-400">
+                                    <span class="text-[10px] font-black px-2 py-0.5 bg-yellow-200 text-yellow-900 rounded-lg border border-yellow-400 shrink-0">
                                         {{ user.badge }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Dedicated Bottom Row: If logged-in user is NOT in Top 3 -->
+                            <div
+                                v-if="!leaderboardData.isInTop3 && leaderboardData.currentUser"
+                                class="mt-3.5 pt-3 border-t-2 border-dashed border-amber-200"
+                            >
+                                <div class="text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1.5 px-1 flex items-center justify-between">
+                                    <span>Peringkat Kamu</span>
+                                    <span class="text-amber-700 font-bold">Yuk kejar Top 3! 🚀</span>
+                                </div>
+                                <div class="flex items-center justify-between p-3 rounded-2xl border-2 bg-gradient-to-r from-orange-50 to-amber-50 border-orange-300 shadow-sm ring-1 ring-orange-200">
+                                    <div class="flex items-center gap-2.5">
+                                        <span class="text-lg font-black text-[#FF4D30] w-5 text-center">
+                                            #{{ leaderboardData.currentUser.rank }}
+                                        </span>
+                                        <div class="w-8 h-8 rounded-xl bg-white border-2 border-orange-300 flex items-center justify-center text-sm shadow-sm">
+                                            {{ leaderboardData.currentUser.avatar || '🦸‍♂️' }}
+                                        </div>
+                                        <div>
+                                            <div class="text-xs font-black text-gray-900 leading-tight flex items-center gap-1">
+                                                <span>{{ leaderboardData.currentUser.name }}</span>
+                                                <span class="text-[10px] text-[#FF4D30] font-black">(Kamu)</span>
+                                            </div>
+                                            <div class="text-[10px] font-extrabold text-orange-700 flex items-center gap-1">
+                                                <span>🔥</span>
+                                                <span>{{ leaderboardData.currentUser.streak_text || (leaderboardData.currentUser.streak + ' hari beruntun') }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <span class="text-[10px] font-black px-2 py-0.5 bg-orange-200 text-orange-950 rounded-lg border border-orange-400 shrink-0">
+                                        #{{ leaderboardData.currentUser.rank }}
                                     </span>
                                 </div>
                             </div>
@@ -777,18 +978,67 @@ const sundaGrid = [
                         </button>
                     </div>
 
-                    <!-- Character Card Grid for Canvas Modal Trigger -->
-                    <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3 mb-8">
+                    <!-- Category Filter Tabs for Coretan -->
+                    <div class="flex flex-wrap items-center justify-center gap-2 mb-6">
                         <button
-                            v-for="item in sundaGrid"
-                            :key="item.char"
+                            @click="coretanCategory = 'semua'"
+                            class="px-3.5 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer border-2"
+                            :class="coretanCategory === 'semua'
+                                ? 'bg-[#FF4D30] text-white border-orange-700 shadow-sm'
+                                : 'bg-orange-50 text-gray-700 border-orange-200 hover:bg-orange-100'"
+                        >
+                            🌟 Semua (53)
+                        </button>
+                        <button
+                            @click="coretanCategory = 'swara'"
+                            class="px-3.5 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer border-2"
+                            :class="coretanCategory === 'swara'
+                                ? 'bg-[#FF4D30] text-white border-orange-700 shadow-sm'
+                                : 'bg-orange-50 text-gray-700 border-orange-200 hover:bg-orange-100'"
+                        >
+                            🅰️ Swara (7)
+                        </button>
+                        <button
+                            @click="coretanCategory = 'ngalagena'"
+                            class="px-3.5 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer border-2"
+                            :class="coretanCategory === 'ngalagena'
+                                ? 'bg-[#FF4D30] text-white border-orange-700 shadow-sm'
+                                : 'bg-orange-50 text-gray-700 border-orange-200 hover:bg-orange-100'"
+                        >
+                            🔤 Ngalagena (23)
+                        </button>
+                        <button
+                            @click="coretanCategory = 'rarangen'"
+                            class="px-3.5 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer border-2"
+                            :class="coretanCategory === 'rarangen'
+                                ? 'bg-[#FF4D30] text-white border-orange-700 shadow-sm'
+                                : 'bg-orange-50 text-gray-700 border-orange-200 hover:bg-orange-100'"
+                        >
+                            ✨ Rarangkén (13)
+                        </button>
+                        <button
+                            @click="coretanCategory = 'angka'"
+                            class="px-3.5 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer border-2"
+                            :class="coretanCategory === 'angka'
+                                ? 'bg-[#FF4D30] text-white border-orange-700 shadow-sm'
+                                : 'bg-orange-50 text-gray-700 border-orange-200 hover:bg-orange-100'"
+                        >
+                            🔢 Angka (10)
+                        </button>
+                    </div>
+
+                    <!-- Character Card Grid for Canvas Modal Trigger -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 mb-8">
+                        <button
+                            v-for="item in filteredSundaGrid"
+                            :key="item.char + item.latin"
                             @click="openModalForChar(item)"
-                            class="bg-orange-50 hover:bg-orange-100 p-4 rounded-2xl border-3 border-orange-300 border-b-4 flex flex-col items-center justify-center cursor-pointer transition-all duration-150 active:translate-y-0.5 active:border-b-2 active:shadow-none hover:-translate-y-1 shadow-sm group"
+                            class="bg-orange-50/70 hover:bg-orange-100 p-3.5 sm:p-4 rounded-2xl border-3 border-orange-300 border-b-4 flex flex-col items-center justify-center cursor-pointer transition-all duration-150 active:translate-y-0.5 active:border-b-2 active:shadow-none hover:-translate-y-1 shadow-sm group relative"
                         >
                             <span class="text-3xl sm:text-4xl font-black text-gray-900 group-hover:scale-110 transition-transform">
-                                {{ item.char }}
+                                {{ item.display || item.char }}
                             </span>
-                            <span class="text-xs font-extrabold text-[#FF4D30] mt-1">
+                            <span class="text-[11px] sm:text-xs font-extrabold text-[#FF4D30] mt-1 text-center truncate w-full">
                                 {{ item.latin }}
                             </span>
                         </button>
@@ -851,10 +1101,23 @@ const sundaGrid = [
                                         {{ story.icon }}
                                     </span>
                                     <span
-                                        class="px-2.5 py-1 rounded-full text-xs font-extrabold border"
-                                        :class="isStoryUnlocked(story.id) ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-900 border-amber-300'"
+                                        v-if="isStoryCompleted(story.id)"
+                                        class="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"
                                     >
-                                        {{ isStoryUnlocked(story.id) ? '🗝️ Terbuka (Gratis / Dibeli)' : `🔒 Butuh ${story.cost} 🪙` }}
+                                        <span>✓</span>
+                                        <span>Selesai Dibaca</span>
+                                    </span>
+                                    <span
+                                        v-else-if="isStoryUnlocked(story.id)"
+                                        class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-teal-100 text-teal-800 border border-teal-300"
+                                    >
+                                        🗝️ Terbuka (Gratis / Dibeli)
+                                    </span>
+                                    <span
+                                        v-else
+                                        class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-900 border border-amber-300"
+                                    >
+                                        🔒 Butuh {{ story.cost }} 🪙
                                     </span>
                                 </div>
 
@@ -869,7 +1132,16 @@ const sundaGrid = [
                             <div>
                                 <div class="flex items-center justify-between text-xs font-bold text-gray-500 mb-4 pt-3 border-t border-teal-200/60">
                                     <span>⏱️ {{ story.readTime }}</span>
-                                    <span class="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-300 font-extrabold">
+                                    <span
+                                        v-if="isStoryCompleted(story.id)"
+                                        class="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-300 font-extrabold"
+                                    >
+                                        ✓ Hadiah Diklaim
+                                    </span>
+                                    <span
+                                        v-else
+                                        class="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-300 font-extrabold"
+                                    >
                                         🪙 +{{ story.xpReward }} XP
                                     </span>
                                 </div>
@@ -877,9 +1149,13 @@ const sundaGrid = [
                                 <button
                                     v-if="isStoryUnlocked(story.id)"
                                     @click="openStoryReader(story)"
-                                    class="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white font-extrabold text-xs rounded-2xl border-2 border-teal-700 border-b-4 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
+                                    class="w-full py-3 text-white font-extrabold text-xs rounded-2xl border-b-4 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
+                                    :class="isStoryCompleted(story.id)
+                                        ? 'bg-emerald-600 hover:bg-emerald-700 border-2 border-emerald-800'
+                                        : 'bg-teal-500 hover:bg-teal-600 border-2 border-teal-700'"
                                 >
-                                    <span>Baca Dongeng 📖</span>
+                                    <span v-if="isStoryCompleted(story.id)">✓ Baca Ulang Dongeng 📖</span>
+                                    <span v-else>Baca Dongeng 📖</span>
                                 </button>
                                 <button
                                     v-else
@@ -952,6 +1228,7 @@ const sundaGrid = [
         <CanvasModal
             :show="showCanvasModal"
             :character="selectedCanvasChar"
+            :display="selectedCanvasDisplay"
             :latin="selectedCanvasLatin"
             @close="showCanvasModal = false"
             @xpGained="handleXpGained"
@@ -987,8 +1264,19 @@ const sundaGrid = [
         <StoryReaderModal
             :show="showStoryModal"
             :story="selectedStory"
+            :isCompleted="isStoryCompleted(selectedStory?.id)"
             @close="showStoryModal = false"
             @storyCompleted="handleStoryCompleted"
+        />
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 7B. STREAK MODAL (DETAIL RUNTUTAN BELAJAR & TRACKER)    -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <StreakModal
+            :show="showStreakModal"
+            :streakData="streakData"
+            @close="showStreakModal = false"
+            @checkinSuccess="handleCheckinSuccess"
         />
 
         <!-- ═══════════════════════════════════════════════════════ -->

@@ -1,10 +1,339 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 
 defineProps({
     canLogin: { type: Boolean },
     canRegister: { type: Boolean },
+});
+
+// ─── Sound Synthesizer & Speech Helper ───
+function playSound(type = 'pop') {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        if (type === 'success') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.08);
+            osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.18);
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.3);
+        } else if (type === 'wrong') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(220, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(170, ctx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.22);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.22);
+        } else {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(type === 'key' ? 440 : 587, ctx.currentTime);
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+        }
+    } catch {
+        // AudioContext not permitted or blocked
+    }
+}
+
+function speakWord(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'id-ID';
+        u.rate = 0.85;
+        window.speechSynthesis.speak(u);
+    }
+}
+
+// ─── Card 1: Canvas Tracing ───
+const miniCanvasRef = ref(null);
+const isDrawing = ref(false);
+const activeTraceChar = ref('ᮊ');
+const activeTraceName = ref('Ka');
+const traceOptions = [
+    { char: 'ᮊ', name: 'Ka' },
+    { char: 'ᮃ', name: 'A' },
+    { char: 'ᮛ', name: 'Ra' },
+    { char: 'ᮒ', name: 'Ta' },
+];
+
+function drawCanvasBackground() {
+    const canvas = miniCanvasRef.value;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Soft dashed guide crosshairs
+    ctx.save();
+    ctx.strokeStyle = '#FED7AA';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+
+    // Horizontal line
+    ctx.beginPath();
+    ctx.moveTo(16, canvas.height / 2);
+    ctx.lineTo(canvas.width - 16, canvas.height / 2);
+    ctx.stroke();
+
+    // Vertical line
+    ctx.beginPath();
+    ctx.moveTo(canvas.width / 2, 16);
+    ctx.lineTo(canvas.width / 2, canvas.height - 16);
+    ctx.stroke();
+
+    // Guide watermark
+    ctx.setLineDash([]);
+    ctx.font = 'bold 96px "Noto Sans Sundanese", "Segoe UI Historic", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#FED7AA';
+    ctx.fillText(activeTraceChar.value, canvas.width / 2, canvas.height / 2 + 6);
+    ctx.restore();
+}
+
+function selectTraceChar(opt) {
+    activeTraceChar.value = opt.char;
+    activeTraceName.value = opt.name;
+    playSound('pop');
+    drawCanvasBackground();
+}
+
+function clearMiniCanvas() {
+    playSound('pop');
+    drawCanvasBackground();
+}
+
+function getPos(e) {
+    const canvas = miniCanvasRef.value;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    let clientX = 0;
+    let clientY = 0;
+    if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY,
+    };
+}
+
+function startDrawing(e) {
+    isDrawing.value = true;
+    const pos = getPos(e);
+    const canvas = miniCanvasRef.value;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    ctx.strokeStyle = '#FF4D30';
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+}
+
+function drawTrace(e) {
+    if (!isDrawing.value) return;
+    const pos = getPos(e);
+    const canvas = miniCanvasRef.value;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+}
+
+function stopDrawing() {
+    isDrawing.value = false;
+}
+
+// ─── Card 2: Daily Streak & Level ───
+const streakDays = ref([
+    { label: 'Sen', checked: true },
+    { label: 'Sel', checked: true },
+    { label: 'Rab', checked: true },
+    { label: 'Kam', checked: true },
+    { label: 'Jum', checked: true },
+    { label: 'Sab', checked: true },
+    { label: 'Min', checked: false },
+]);
+const streakCount = ref(6);
+const hasCheckedInToday = ref(false);
+const xpCount = ref(450);
+const streakNotification = ref('');
+
+function toggleCheckIn() {
+    if (!hasCheckedInToday.value) {
+        hasCheckedInToday.value = true;
+        streakDays.value[6].checked = true;
+        streakCount.value = 7;
+        xpCount.value = 500;
+        streakNotification.value = '🎉 Hore! Check-in berhasil: +50 XP & 10 Koin!';
+        playSound('success');
+    } else {
+        hasCheckedInToday.value = false;
+        streakDays.value[6].checked = false;
+        streakCount.value = 6;
+        xpCount.value = 450;
+        streakNotification.value = '';
+        playSound('pop');
+    }
+}
+
+// ─── Card 3: Kuis Aksara ───
+const quizList = [
+    {
+        char: 'ᮊ',
+        question: 'Huruf aksara Sunda di atas berbunyi apa?',
+        options: [
+            { text: 'Ka', correct: true },
+            { text: 'Ga', correct: false },
+            { text: 'Nga', correct: false },
+            { text: 'Ta', correct: false },
+        ],
+        hint: 'Bentuknya khas menyerupai angka 77 kembar!',
+        sound: 'Ka'
+    },
+    {
+        char: 'ᮃ',
+        question: 'Aksara Swara berikut melambangkan vokal apa?',
+        options: [
+            { text: 'I', correct: false },
+            { text: 'A', correct: true },
+            { text: 'U', correct: false },
+            { text: 'E', correct: false },
+        ],
+        hint: 'Merupakan huruf vokal pertama dalam aksara Sunda!',
+        sound: 'A'
+    },
+    {
+        char: 'ᮛ',
+        question: 'Manakah nama yang tepat untuk konsonan ini?',
+        options: [
+            { text: 'La', correct: false },
+            { text: 'Wa', correct: false },
+            { text: 'Ra', correct: true },
+            { text: 'Sa', correct: false },
+        ],
+        hint: 'Konsonan ini berbunyi getar lidah "Ra"!',
+        sound: 'Ra'
+    }
+];
+
+const currentQuizIndex = ref(0);
+const selectedQuizOption = ref(null);
+const quizState = ref('idle');
+const isHintActive = ref(false);
+const eliminatedOptions = ref([]);
+
+function answerQuiz(option) {
+    if (quizState.value === 'correct') return;
+    selectedQuizOption.value = option.text;
+    if (option.correct) {
+        quizState.value = 'correct';
+        playSound('success');
+    } else {
+        quizState.value = 'wrong';
+        playSound('wrong');
+    }
+}
+
+function activateHint() {
+    isHintActive.value = true;
+    playSound('pop');
+    const current = quizList[currentQuizIndex.value];
+    const wrong = current.options.filter(o => !o.correct).slice(0, 2).map(o => o.text);
+    eliminatedOptions.value = wrong;
+}
+
+function nextQuiz() {
+    currentQuizIndex.value = (currentQuizIndex.value + 1) % quizList.length;
+    selectedQuizOption.value = null;
+    quizState.value = 'idle';
+    isHintActive.value = false;
+    eliminatedOptions.value = [];
+    playSound('pop');
+}
+
+// ─── Card 4: Virtual Keyboard & Suara ───
+const keyboardKeys = [
+    { char: 'ᮃ', latin: 'a' },
+    { char: 'ᮊ', latin: 'ka' },
+    { char: 'ᮞ', latin: 'sa' },
+    { char: 'ᮔ', latin: 'na' },
+    { char: 'ᮒ', latin: 'ta' },
+    { char: 'ᮛ', latin: 'ra' },
+    { char: 'ᮕ', latin: 'pa' },
+    { char: 'ᮘ', latin: 'ba' },
+    { char: 'ᮙ', latin: 'ma' },
+    { char: 'ᮠ', latin: 'ha' },
+];
+
+const typedItems = ref([
+    { char: 'ᮃ', latin: 'a' },
+    { char: 'ᮊ', latin: 'ka' },
+    { char: 'ᮞ', latin: 'sa' },
+    { char: 'ᮔ', latin: 'na' },
+    { char: 'ᮒ', latin: 'ta' },
+    { char: 'ᮛ', latin: 'ra' },
+]);
+
+const activeKeyChar = ref(null);
+
+function pressKey(key) {
+    playSound('key');
+    activeKeyChar.value = key.char;
+    setTimeout(() => {
+        if (activeKeyChar.value === key.char) activeKeyChar.value = null;
+    }, 180);
+
+    if (typedItems.value.length < 12) {
+        typedItems.value.push(key);
+    }
+}
+
+function backspaceKey() {
+    playSound('pop');
+    typedItems.value.pop();
+}
+
+function clearTyped() {
+    playSound('pop');
+    typedItems.value = [];
+}
+
+function playVoice() {
+    playSound('pop');
+    if (typedItems.value.length === 0) {
+        speakWord('Ketik aksara terlebih dahulu');
+        return;
+    }
+    const pronunciation = typedItems.value.map(k => k.latin).join(' ');
+    speakWord(pronunciation);
+}
+
+onMounted(() => {
+    drawCanvasBackground();
 });
 
 // ─── FAQ Accordion ───
@@ -296,128 +625,428 @@ const mobileMenuOpen = ref(false);
         </section>
 
         <!-- ═══════════════════════════════════════════════════════ -->
-        <!--  FITUR UTAMA — BENTO GRID                              -->
+        <!--  FITUR UTAMA — CARD SHOWCASE GRID                      -->
         <!-- ═══════════════════════════════════════════════════════ -->
-        <section id="fitur" class="py-20 sm:py-24 bg-white">
+        <section id="fitur" class="py-20 sm:py-28 bg-[#FFFDF7] relative overflow-hidden">
+            <!-- Subtle background glowing bubbles -->
+            <div class="absolute -top-24 -left-24 w-96 h-96 bg-orange-100/50 rounded-full blur-3xl -z-10"></div>
+            <div class="absolute -bottom-24 -right-24 w-96 h-96 bg-yellow-100/50 rounded-full blur-3xl -z-10"></div>
+
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="text-center mb-14">
-                    <span class="inline-block px-4 py-1.5 bg-orange-100 text-[#FF4D30] rounded-full text-sm font-bold mb-4">🎯 Fitur Seru</span>
-                    <h2 class="text-3xl sm:text-4xl font-extrabold text-gray-900">Belajar yang Nggak Bikin Bosan!</h2>
-                    <p class="mt-3 text-gray-500 text-lg">Semua fitur didesain khusus buat bikin kamu makin semangat 💪</p>
+                <!-- Section Header -->
+                <div class="text-center mb-16 sm:mb-20">
+                    <span class="inline-flex items-center gap-1.5 px-4 py-1.5 bg-orange-100 text-[#FF4D30] rounded-full text-sm font-extrabold shadow-sm mb-4">
+                        <span>🎯</span> Fitur Interaktif Unggulan
+                    </span>
+                    <h2 class="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight">
+                        Eksplorasi Fitur Seru Aksantara!
+                    </h2>
+                    <p class="mt-4 text-gray-600 text-lg sm:text-xl max-w-2xl mx-auto leading-relaxed">
+                        Coba langsung simulasi interaktif di bawah ini dan rasakan pengalaman belajar aksara yang hidup dan menyenangkan! ✨
+                    </p>
                 </div>
 
-                <!-- Bento Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- 2x2 Showcase Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10">
 
-                    <!-- Canvas Tracing — spans 2 cols on lg -->
-                    <div class="lg:col-span-2 bg-gradient-to-br from-orange-50 to-red-50 rounded-3xl p-8 sm:p-10 border border-orange-100 group hover:shadow-xl transition-all duration-300">
-                        <div class="flex flex-col sm:flex-row items-start gap-6">
-                            <div class="flex-1">
-                                <div class="w-14 h-14 bg-[#FF4D30] rounded-2xl flex items-center justify-center text-2xl text-white shadow-lg shadow-[#FF4D30]/20 mb-5">
+                    <!-- ═══════════════════════════════════════════════ -->
+                    <!-- CARD 1: CANVAS TRACING                          -->
+                    <!-- ═══════════════════════════════════════════════ -->
+                    <div class="group bg-gradient-to-br from-amber-50/90 via-orange-50/50 to-white rounded-3xl p-7 sm:p-9 border border-amber-200/70 shadow-sm hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
+                        <div>
+                            <!-- Header Bar -->
+                            <div class="flex items-center justify-between mb-5">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white shadow-lg shadow-orange-500/20 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform duration-300">
                                     ✏️
                                 </div>
-                                <h3 class="text-2xl font-extrabold text-gray-800 mb-3">Canvas Tracing</h3>
-                                <p class="text-gray-600 leading-relaxed">
-                                    Latihan nulis aksara langsung di layar! Ikuti garis bantu, terus tulis sendiri.
-                                    Makin sering latihan, tulisanmu makin keren! 🌟
-                                </p>
-                                <div class="mt-4 flex gap-2 flex-wrap">
-                                    <span class="px-3 py-1 bg-white/80 rounded-full text-xs font-bold text-[#FF4D30]">🖊️ Tulis di Layar</span>
-                                    <span class="px-3 py-1 bg-white/80 rounded-full text-xs font-bold text-[#FF4D30]">📐 Garis Bantu</span>
-                                    <span class="px-3 py-1 bg-white/80 rounded-full text-xs font-bold text-[#FF4D30]">⭐ Skor Otomatis</span>
-                                </div>
+                                <span class="px-3.5 py-1 bg-amber-100/80 text-amber-800 rounded-full text-xs font-black tracking-wide border border-amber-200">
+                                    ✍️ LATIHAN MENULIS
+                                </span>
                             </div>
-                            <!-- Mini canvas preview -->
-                            <div class="w-full sm:w-48 h-48 bg-white rounded-2xl border-2 border-dashed border-orange-200 flex items-center justify-center flex-shrink-0">
-                                <div class="text-center">
-                                    <div class="text-6xl text-orange-200 group-hover:text-[#FF4D30] transition-colors duration-500">ꦲ</div>
-                                    <div class="text-xs text-gray-400 mt-2 font-bold">Coba tulis di sini!</div>
+
+                            <h3 class="text-2xl sm:text-3xl font-black text-gray-800 mb-3 tracking-tight">
+                                Canvas Tracing
+                            </h3>
+                            <p class="text-gray-600 text-sm sm:text-base leading-relaxed mb-5">
+                                Latih kelenturan tangan menulis aksara langsung di layar! Ikuti garis bantu transparan, nikmati goresan kuas halus, dan kuasai lekukan setiap huruf secara alami.
+                            </p>
+
+                            <!-- Feature Tags -->
+                            <div class="flex flex-wrap gap-2 mb-6">
+                                <span class="px-3 py-1 bg-white/90 text-amber-800 rounded-xl text-xs font-bold border border-amber-100 shadow-xs">🖊️ Goresan Halus</span>
+                                <span class="px-3 py-1 bg-white/90 text-amber-800 rounded-xl text-xs font-bold border border-amber-100 shadow-xs">📐 Garis Panduan</span>
+                                <span class="px-3 py-1 bg-white/90 text-amber-800 rounded-xl text-xs font-bold border border-amber-100 shadow-xs">🖐️ Sentuh & Mouse</span>
+                            </div>
+                        </div>
+
+                        <!-- Mini Demo Showcase -->
+                        <div class="bg-white/90 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-amber-200/80 shadow-inner">
+                            <!-- Character selector buttons -->
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="text-xs font-bold text-gray-500">Pilih Huruf:</span>
+                                    <button
+                                        v-for="opt in traceOptions"
+                                        :key="opt.char"
+                                        @click="selectTraceChar(opt)"
+                                        class="px-2.5 py-1 rounded-lg text-xs font-black transition-all"
+                                        :class="activeTraceChar === opt.char
+                                            ? 'bg-[#FF4D30] text-white shadow-sm'
+                                            : 'bg-amber-100/70 text-amber-900 hover:bg-amber-200/70'"
+                                    >
+                                        {{ opt.char }} ({{ opt.name }})
+                                    </button>
+                                </div>
+                                <button
+                                    @click="clearMiniCanvas"
+                                    class="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-amber-200"
+                                    title="Bersihkan kanvas"
+                                >
+                                    <span>🧹</span> Hapus
+                                </button>
+                            </div>
+
+                            <!-- Interactive Canvas Box -->
+                            <div class="relative w-full rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/40 overflow-hidden flex items-center justify-center">
+                                <canvas
+                                    ref="miniCanvasRef"
+                                    width="360"
+                                    height="180"
+                                    class="w-full h-44 cursor-crosshair touch-none select-none"
+                                    @mousedown="startDrawing"
+                                    @mousemove="drawTrace"
+                                    @mouseup="stopDrawing"
+                                    @mouseleave="stopDrawing"
+                                    @touchstart.passive="startDrawing"
+                                    @touchmove.prevent="drawTrace"
+                                    @touchend="stopDrawing"
+                                ></canvas>
+
+                                <!-- Helper instruction overlay -->
+                                <div class="absolute bottom-2 right-3 pointer-events-none text-[11px] font-bold text-amber-600/80 bg-white/70 px-2 py-0.5 rounded-md backdrop-blur-xs">
+                                    ✍️ Coretkan jarimu / mouse di sini
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Daily Streak & Level -->
-                    <div class="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-3xl p-8 border border-orange-100 hover:shadow-xl transition-all duration-300">
-                        <div class="w-14 h-14 bg-yellow-400 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-yellow-400/20 mb-5">
-                            🔥
-                        </div>
-                        <h3 class="text-2xl font-extrabold text-gray-800 mb-3">Daily Streak & Level</h3>
-                        <p class="text-gray-600 leading-relaxed">
-                            Belajar setiap hari biar streakmu nggak putus! Kumpulkan XP dan naik level kayak main game 🎮
-                        </p>
+                    <!-- ═══════════════════════════════════════════════ -->
+                    <!-- CARD 2: DAILY STREAK & LEVEL                    -->
+                    <!-- ═══════════════════════════════════════════════ -->
+                    <div class="group bg-gradient-to-br from-yellow-50/90 via-amber-50/50 to-white rounded-3xl p-7 sm:p-9 border border-yellow-200/70 shadow-sm hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
+                        <div>
+                            <!-- Header Bar -->
+                            <div class="flex items-center justify-between mb-5">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-yellow-400 to-amber-500 text-white shadow-lg shadow-yellow-500/20 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform duration-300">
+                                    🔥
+                                </div>
+                                <span class="px-3.5 py-1 bg-yellow-100/80 text-yellow-800 rounded-full text-xs font-black tracking-wide border border-yellow-200">
+                                    ⚡ GAMIFIKASI
+                                </span>
+                            </div>
 
-                        <!-- Mini streak display -->
-                        <div class="mt-6 flex gap-1.5">
-                            <div v-for="day in ['S', 'S', 'R', 'K', 'J', 'S', 'M']" :key="day"
-                                 class="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-extrabold"
-                                 :class="day !== 'M' ? 'bg-[#FF4D30] text-white' : 'bg-orange-100 text-orange-300'"
+                            <h3 class="text-2xl sm:text-3xl font-black text-gray-800 mb-3 tracking-tight">
+                                Daily Streak & Level
+                            </h3>
+                            <p class="text-gray-600 text-sm sm:text-base leading-relaxed mb-5">
+                                Ritme belajar harian yang memotivasi! Jaga api streak tetap membara, raih bonus koin, dan kumpulkan XP untuk menaikkan level pahlawan aksaramu.
+                            </p>
+
+                            <!-- Feature Tags -->
+                            <div class="flex flex-wrap gap-2 mb-6">
+                                <span class="px-3 py-1 bg-white/90 text-yellow-800 rounded-xl text-xs font-bold border border-yellow-100 shadow-xs">🔥 Api Streak</span>
+                                <span class="px-3 py-1 bg-white/90 text-yellow-800 rounded-xl text-xs font-bold border border-yellow-100 shadow-xs">⭐ Akumulasi XP</span>
+                                <span class="px-3 py-1 bg-white/90 text-yellow-800 rounded-xl text-xs font-bold border border-yellow-100 shadow-xs">🪙 Koin Hadiah</span>
+                            </div>
+                        </div>
+
+                        <!-- Mini Demo Showcase -->
+                        <div class="bg-white/90 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-yellow-200/80 shadow-inner space-y-4">
+                            <!-- Top Streak Banner -->
+                            <div class="flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-3 border border-amber-200">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#FF4D30] to-orange-400 text-white flex items-center justify-center text-xl shadow-sm animate-pulse">
+                                        🔥
+                                    </div>
+                                    <div>
+                                        <div class="text-base font-black text-gray-800">{{ streakCount }} Hari Beruntun!</div>
+                                        <div class="text-xs text-gray-500 font-bold">Ritme belajar terjaga sangat baik</div>
+                                    </div>
+                                </div>
+                                <span class="px-2.5 py-1 bg-white text-orange-600 rounded-lg text-xs font-black shadow-xs border border-orange-100">
+                                    🏆 Rekor: 14 Hari
+                                </span>
+                            </div>
+
+                            <!-- 7-Day Circles Tracker -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-xs font-bold text-gray-500">Tracker Mingguan:</span>
+                                    <span class="text-xs font-extrabold text-[#FF4D30]">
+                                        {{ hasCheckedInToday ? '✓ Hari ini selesai' : '⏳ Belum check-in' }}
+                                    </span>
+                                </div>
+                                <div class="grid grid-cols-7 gap-1.5 sm:gap-2">
+                                    <div
+                                        v-for="(item, idx) in streakDays"
+                                        :key="idx"
+                                        class="flex flex-col items-center gap-1"
+                                    >
+                                        <div
+                                            class="w-full aspect-square max-w-[42px] rounded-xl flex items-center justify-center text-xs font-black transition-all duration-200"
+                                            :class="item.checked
+                                                ? 'bg-gradient-to-tr from-[#FF4D30] to-orange-400 text-white shadow-sm scale-100'
+                                                : 'bg-yellow-100/70 text-yellow-600 border border-yellow-200/70'"
+                                        >
+                                            <span v-if="item.checked">🔥</span>
+                                            <span v-else class="text-[11px] opacity-60">○</span>
+                                        </div>
+                                        <span class="text-[11px] font-bold" :class="item.checked ? 'text-gray-800' : 'text-gray-400'">
+                                            {{ item.label }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Interactive Check-in Button -->
+                            <div class="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                                <button
+                                    @click="toggleCheckIn"
+                                    class="w-full py-2.5 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-sm"
+                                    :class="hasCheckedInToday
+                                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                        : 'bg-gradient-to-r from-[#FF4D30] to-orange-500 hover:from-[#e64328] hover:to-orange-600 text-white hover:scale-[1.02]'"
+                                >
+                                    <span>{{ hasCheckedInToday ? '✅ Sudah Check-in Hari Ini' : '🎯 Coba Check-in Hari Ini (+50 XP)' }}</span>
+                                </button>
+                            </div>
+
+                            <!-- Interactive Level Progress Bar -->
+                            <div class="pt-1 border-t border-yellow-100">
+                                <div class="flex items-center justify-between text-xs font-bold mb-1.5">
+                                    <span class="text-gray-700 flex items-center gap-1">
+                                        <span>⭐</span> <strong>Level 5</strong> • Penjelajah Cilik
+                                    </span>
+                                    <span class="text-amber-700 font-extrabold">{{ xpCount }} / 600 XP</span>
+                                </div>
+                                <div class="w-full h-2.5 bg-yellow-100 rounded-full overflow-hidden">
+                                    <div
+                                        class="h-full bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full transition-all duration-500"
+                                        :style="{ width: `${(xpCount / 600) * 100}%` }"
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ═══════════════════════════════════════════════ -->
+                    <!-- CARD 3: KUIS AKSARA                             -->
+                    <!-- ═══════════════════════════════════════════════ -->
+                    <div class="group bg-gradient-to-br from-emerald-50/90 via-teal-50/50 to-white rounded-3xl p-7 sm:p-9 border border-emerald-200/70 shadow-sm hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
+                        <div>
+                            <!-- Header Bar -->
+                            <div class="flex items-center justify-between mb-5">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white shadow-lg shadow-emerald-500/20 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform duration-300">
+                                    🎯
+                                </div>
+                                <span class="px-3.5 py-1 bg-emerald-100/80 text-emerald-800 rounded-full text-xs font-black tracking-wide border border-emerald-200">
+                                    🧠 EVALUASI CEPAT
+                                </span>
+                            </div>
+
+                            <h3 class="text-2xl sm:text-3xl font-black text-gray-800 mb-3 tracking-tight">
+                                Kuis Aksara
+                            </h3>
+                            <p class="text-gray-600 text-sm sm:text-base leading-relaxed mb-5">
+                                Tantang daya ingat dengan kuis tebak aksara yang interaktif! Lengkap dengan tombol bantuan hint pintar untuk mengeliminasi jawaban yang salah.
+                            </p>
+
+                            <!-- Feature Tags -->
+                            <div class="flex flex-wrap gap-2 mb-6">
+                                <span class="px-3 py-1 bg-white/90 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-100 shadow-xs">🎮 Pilihan Ganda</span>
+                                <span class="px-3 py-1 bg-white/90 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-100 shadow-xs">💡 Bantuan Hint</span>
+                                <span class="px-3 py-1 bg-white/90 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-100 shadow-xs">⚡ Umpan Balik Instan</span>
+                            </div>
+                        </div>
+
+                        <!-- Mini Demo Showcase -->
+                        <div class="bg-white/90 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-emerald-200/80 shadow-inner space-y-3.5">
+                            <!-- Question Bar -->
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-gray-500">
+                                    Soal {{ currentQuizIndex + 1 }} dari {{ quizList.length }}
+                                </span>
+                                <div class="flex items-center gap-1.5">
+                                    <button
+                                        @click="activateHint"
+                                        :disabled="isHintActive"
+                                        class="px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                                        :class="isHintActive
+                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                            : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'"
+                                        title="Eliminasi 2 pilihan yang salah"
+                                    >
+                                        <span>💡</span> Hint
+                                    </button>
+                                    <button
+                                        @click="nextQuiz"
+                                        class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                                        title="Ganti ke soal berikutnya"
+                                    >
+                                        <span>🔄</span> Soal Lain
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Featured Aksara Card -->
+                            <div class="flex items-center justify-between bg-emerald-50/60 rounded-xl p-3 border border-emerald-100">
+                                <div>
+                                    <div class="text-xs font-bold text-emerald-800">Tebak lafal huruf berikut:</div>
+                                    <div class="text-xs text-gray-500">{{ quizList[currentQuizIndex].question }}</div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-4xl sm:text-5xl font-black text-emerald-900 px-3 py-1 bg-white rounded-xl shadow-xs border border-emerald-100">
+                                        {{ quizList[currentQuizIndex].char }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Hint Banner (if active) -->
+                            <div v-if="isHintActive" class="px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-800 font-bold flex items-center gap-2">
+                                <span>💡</span>
+                                <span>{{ quizList[currentQuizIndex].hint }}</span>
+                            </div>
+
+                            <!-- 2x2 Answer Grid -->
+                            <div class="grid grid-cols-2 gap-2">
+                                <button
+                                    v-for="opt in quizList[currentQuizIndex].options"
+                                    :key="opt.text"
+                                    @click="answerQuiz(opt)"
+                                    :disabled="eliminatedOptions.includes(opt.text) || quizState === 'correct'"
+                                    class="py-2.5 px-3 rounded-xl font-black text-sm flex items-center justify-between transition-all"
+                                    :class="[
+                                        eliminatedOptions.includes(opt.text)
+                                            ? 'bg-gray-100 text-gray-400 line-through opacity-50 cursor-not-allowed'
+                                            : selectedQuizOption === opt.text
+                                                ? opt.correct
+                                                    ? 'bg-emerald-500 text-white shadow-sm ring-2 ring-emerald-300'
+                                                    : 'bg-rose-500 text-white shadow-sm ring-2 ring-rose-300'
+                                                : 'bg-white hover:bg-emerald-50 text-gray-700 border border-emerald-100 shadow-xs'
+                                    ]"
+                                >
+                                    <span>{{ opt.text }}</span>
+                                    <span v-if="selectedQuizOption === opt.text">
+                                        {{ opt.correct ? '✓' : '✕' }}
+                                    </span>
+                                </button>
+                            </div>
+
+                            <!-- Feedback Toast -->
+                            <div
+                                v-if="quizState !== 'idle'"
+                                class="text-center py-1.5 px-3 rounded-xl text-xs font-black transition-all"
+                                :class="quizState === 'correct' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'"
                             >
-                                {{ day }}
-                            </div>
-                        </div>
-                        <p class="text-xs text-gray-400 mt-2 font-bold">🔥 6 hari berturut-turut!</p>
-                    </div>
-
-                    <!-- Folktale Unlocker -->
-                    <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl p-8 border border-emerald-100 hover:shadow-xl transition-all duration-300">
-                        <div class="w-14 h-14 bg-emerald-500 rounded-2xl flex items-center justify-center text-2xl text-white shadow-lg shadow-emerald-500/20 mb-5">
-                            📖
-                        </div>
-                        <h3 class="text-2xl font-extrabold text-gray-800 mb-3">Petualangan Cerita Rakyat</h3>
-                        <p class="text-gray-600 leading-relaxed">
-                            Buka cerita rakyat keren setelah belajar aksara! Dari Timun Mas sampai Sangkuriang, semua ada di sini 🏔️
-                        </p>
-
-                        <!-- Mini story cards -->
-                        <div class="mt-5 space-y-2">
-                            <div class="flex items-center gap-3 bg-white/70 rounded-xl px-4 py-2.5">
-                                <span class="text-lg">🗝️</span>
-                                <span class="text-sm font-bold text-gray-700">Timun Mas</span>
-                                <span class="ml-auto text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">Terbuka</span>
-                            </div>
-                            <div class="flex items-center gap-3 bg-white/70 rounded-xl px-4 py-2.5">
-                                <span class="text-lg">🔒</span>
-                                <span class="text-sm font-bold text-gray-400">Sangkuriang</span>
-                                <span class="ml-auto text-xs bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full font-bold">Level 5</span>
+                                <span v-if="quizState === 'correct'">🎉 Jawaban Tepat! Kamu mendapatkan +20 XP!</span>
+                                <span v-else>❌ Belum tepat, coba gunakan tombol hint atau opsi lain!</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Virtual Keyboard & Suara — spans 2 cols on lg -->
-                    <div class="lg:col-span-2 bg-gradient-to-br from-violet-50 to-purple-50 rounded-3xl p-8 sm:p-10 border border-violet-100 hover:shadow-xl transition-all duration-300">
-                        <div class="flex flex-col sm:flex-row items-start gap-6">
-                            <div class="flex-1">
-                                <div class="w-14 h-14 bg-violet-500 rounded-2xl flex items-center justify-center text-2xl text-white shadow-lg shadow-violet-500/20 mb-5">
+                    <!-- ═══════════════════════════════════════════════ -->
+                    <!-- CARD 4: VIRTUAL KEYBOARD & SUARA                -->
+                    <!-- ═══════════════════════════════════════════════ -->
+                    <div class="group bg-gradient-to-br from-violet-50/90 via-purple-50/50 to-white rounded-3xl p-7 sm:p-9 border border-violet-200/70 shadow-sm hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
+                        <div>
+                            <!-- Header Bar -->
+                            <div class="flex items-center justify-between mb-5">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-violet-600 to-purple-500 text-white shadow-lg shadow-violet-500/20 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform duration-300">
                                     ⌨️
                                 </div>
-                                <h3 class="text-2xl font-extrabold text-gray-800 mb-3">Virtual Keyboard & Suara</h3>
-                                <p class="text-gray-600 leading-relaxed">
-                                    Ketik aksara pakai keyboard virtual yang keren! Tekan huruf dan dengarkan cara bacanya.
-                                    Belajar jadi makin mudah dan seru! 🔊
-                                </p>
-                                <div class="mt-4 flex gap-2 flex-wrap">
-                                    <span class="px-3 py-1 bg-white/80 rounded-full text-xs font-bold text-violet-600">⌨️ Keyboard Aksara</span>
-                                    <span class="px-3 py-1 bg-white/80 rounded-full text-xs font-bold text-violet-600">🔊 Dengar Suara</span>
-                                    <span class="px-3 py-1 bg-white/80 rounded-full text-xs font-bold text-violet-600">💬 Ketik & Terjemah</span>
+                                <span class="px-3.5 py-1 bg-violet-100/80 text-violet-800 rounded-full text-xs font-black tracking-wide border border-violet-200">
+                                    🔊 PAPAN KETIK AUDIO
+                                </span>
+                            </div>
+
+                            <h3 class="text-2xl sm:text-3xl font-black text-gray-800 mb-3 tracking-tight">
+                                Virtual Keyboard & Suara
+                            </h3>
+                            <p class="text-gray-600 text-sm sm:text-base leading-relaxed mb-5">
+                                Ketik aksara dengan keyboard digital yang ramah anak. Setiap huruf dilengkapi audio pelafalan jelas untuk melatih kemampuan berbicara dan transliterasi.
+                            </p>
+
+                            <!-- Feature Tags -->
+                            <div class="flex flex-wrap gap-2 mb-6">
+                                <span class="px-3 py-1 bg-white/90 text-violet-800 rounded-xl text-xs font-bold border border-violet-100 shadow-xs">⌨️ Tombol Aksara</span>
+                                <span class="px-3 py-1 bg-white/90 text-violet-800 rounded-xl text-xs font-bold border border-violet-100 shadow-xs">🔊 Audio Pelafalan</span>
+                                <span class="px-3 py-1 bg-white/90 text-violet-800 rounded-xl text-xs font-bold border border-violet-100 shadow-xs">🔤 Transliterasi Latin</span>
+                            </div>
+                        </div>
+
+                        <!-- Mini Demo Showcase -->
+                        <div class="bg-white/90 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-violet-200/80 shadow-inner space-y-3.5">
+                            <!-- Typed Output Screen -->
+                            <div class="bg-violet-50/60 rounded-xl p-3 border border-violet-100 min-h-[66px] flex flex-col justify-center">
+                                <div v-if="typedItems.length > 0" class="flex flex-wrap items-baseline gap-1.5">
+                                    <span
+                                        v-for="(item, idx) in typedItems"
+                                        :key="idx"
+                                        class="text-xl sm:text-2xl font-black text-violet-900 tracking-wider inline-block"
+                                    >
+                                        {{ item.char }}
+                                    </span>
+                                </div>
+                                <div v-else class="text-xs italic text-gray-400 font-bold">
+                                    Klik tombol aksara di bawah untuk mulai mengetik...
+                                </div>
+
+                                <!-- Phonetic transcription bar -->
+                                <div v-if="typedItems.length > 0" class="text-[11px] font-bold text-violet-600 mt-1">
+                                    Lafal: {{ typedItems.map(k => k.latin).join(' • ') }}
                                 </div>
                             </div>
-                            <!-- Mini keyboard preview -->
-                            <div class="w-full sm:w-56 flex-shrink-0">
-                                <div class="bg-white rounded-2xl p-4 border border-violet-100 shadow-sm">
-                                    <div class="grid grid-cols-5 gap-1.5">
-                                        <div v-for="char in ['ꦲ','ꦤ','ꦕ','ꦫ','ꦏ','ꦢ','ꦠ','ꦱ','ꦮ','ꦭ']" :key="char"
-                                             class="h-10 bg-violet-50 rounded-lg flex items-center justify-center text-lg font-bold text-violet-400 hover:bg-violet-500 hover:text-white transition cursor-pointer">
-                                            {{ char }}
-                                        </div>
-                                    </div>
-                                    <div class="mt-2 h-8 bg-violet-50 rounded-lg flex items-center justify-center text-xs text-violet-300 font-bold">
-                                        spasi
-                                    </div>
-                                </div>
+
+                            <!-- Virtual Keyboard Grid (2 Rows of 5 Keys) -->
+                            <div class="grid grid-cols-5 gap-1.5">
+                                <button
+                                    v-for="key in keyboardKeys"
+                                    :key="key.char"
+                                    @click="pressKey(key)"
+                                    class="h-12 bg-white hover:bg-violet-500 hover:text-white rounded-xl border border-violet-100 shadow-xs flex flex-col items-center justify-center transition-all cursor-pointer select-none active:scale-95"
+                                    :class="{ 'bg-violet-600 text-white ring-2 ring-violet-300 scale-95': activeKeyChar === key.char }"
+                                >
+                                    <span class="text-base font-black leading-none">{{ key.char }}</span>
+                                    <span class="text-[10px] font-extrabold opacity-70 leading-none mt-0.5">{{ key.latin }}</span>
+                                </button>
+                            </div>
+
+                            <!-- Bottom Action Controls -->
+                            <div class="flex items-center gap-2 pt-1">
+                                <button
+                                    @click="playVoice"
+                                    class="flex-1 py-2 px-3 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm"
+                                >
+                                    <span>🔊</span> Bunyikan Lafal
+                                </button>
+                                <button
+                                    @click="backspaceKey"
+                                    class="py-2 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-black transition"
+                                    title="Hapus huruf terakhir"
+                                >
+                                    ⌫ Hapus
+                                </button>
+                                <button
+                                    @click="clearTyped"
+                                    class="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black transition border border-rose-100"
+                                    title="Bersihkan teks"
+                                >
+                                    🧹 Reset
+                                </button>
                             </div>
                         </div>
                     </div>
+
                 </div>
             </div>
         </section>

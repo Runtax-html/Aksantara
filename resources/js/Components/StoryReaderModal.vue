@@ -5,6 +5,7 @@ import axios from 'axios';
 const props = defineProps({
     show: { type: Boolean, default: false },
     story: { type: Object, default: () => null },
+    isCompleted: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['close', 'storyCompleted']);
@@ -14,7 +15,7 @@ const completedSuccess = ref(false);
 const rewardData = ref({ xp: 50, coins: 10, missionBonus: 0 });
 
 async function finishReading() {
-    if (!props.story || isCompleting.value) return;
+    if (!props.story || isCompleting.value || props.isCompleted || completedSuccess.value) return;
     isCompleting.value = true;
 
     try {
@@ -25,8 +26,8 @@ async function finishReading() {
         if (response.data.success) {
             completedSuccess.value = true;
             rewardData.value = {
-                xp: response.data.xpEarned,
-                coins: response.data.coinsEarned,
+                xp: response.data.xpEarned || 0,
+                coins: response.data.coinsEarned || 0,
                 messages: response.data.messages || [],
             };
             emit('storyCompleted', response.data);
@@ -164,22 +165,28 @@ function closeModal() {
                             Tutup
                         </button>
 
+                        <!-- Status Tombol: Jika sudah selesai dibaca (sekali klaim), tombol menjadi disabled / redup -->
                         <button
-                            v-if="!completedSuccess"
+                            v-if="isCompleted || completedSuccess"
+                            disabled
+                            class="flex-1 py-3 bg-emerald-100 text-emerald-800 border-2 border-emerald-300 font-extrabold text-xs sm:text-sm rounded-xl cursor-not-allowed opacity-90 flex items-center justify-center gap-2 shadow-xs"
+                            title="Hadiah dongeng ini sudah pernah diklaim"
+                        >
+                            <span class="text-base">✓</span>
+                            <span>Selesai Dibaca</span>
+                            <span class="text-[11px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-md font-bold">
+                                Hadiah Sudah Diambil
+                            </span>
+                        </button>
+
+                        <button
+                            v-else
                             @click="finishReading"
                             :disabled="isCompleting"
                             class="flex-1 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white font-black text-xs sm:text-sm rounded-xl border-2 border-teal-700 border-b-4 shadow-[0_2px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:border-b-2 active:shadow-none transition flex items-center justify-center gap-2 cursor-pointer"
                         >
                             <span>{{ isCompleting ? 'Menyimpan...' : 'Tandai Selesai Membaca 📖' }}</span>
                             <span class="bg-white/20 px-2 py-0.5 rounded-lg text-[11px] font-bold">+50 XP & +10 🪙</span>
-                        </button>
-
-                        <button
-                            v-else
-                            @click="closeModal"
-                            class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm rounded-xl border-2 border-emerald-800 border-b-4 transition cursor-pointer flex items-center justify-center gap-2"
-                        >
-                            <span>✓ Sudah Selesai (Kembali ke Dongeng)</span>
                         </button>
                     </div>
 

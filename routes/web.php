@@ -35,6 +35,7 @@ Route::middleware('auth')->prefix('api/gamification')->name('gamification.')->gr
     Route::post('/unlock-story', [GamificationController::class, 'unlockStory'])->name('unlock-story');
     Route::post('/use-hint', [GamificationController::class, 'useHint'])->name('use-hint');
     Route::post('/claim-mission-bonus', [GamificationController::class, 'claimMissionBonus'])->name('claim-mission-bonus');
+    Route::post('/check-in', [GamificationController::class, 'checkIn'])->name('check-in');
 });
 
 Route::middleware('auth')->group(function () {

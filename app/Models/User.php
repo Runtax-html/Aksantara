@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password', 'streak', 'xp', 'level', 'coins', 'last_activity_at'])]
+#[Fillable(['name', 'email', 'password', 'streak', 'max_streak', 'xp', 'level', 'coins', 'last_activity_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -30,6 +30,11 @@ class User extends Authenticatable
     public function dailyMissions()
     {
         return $this->hasMany(UserDailyMission::class);
+    }
+
+    public function checkins()
+    {
+        return $this->hasMany(UserCheckin::class);
     }
 
     /**

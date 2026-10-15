@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\UserQuizProgress;
 use App\Models\UserUnlockedStory;
 use App\Models\UserDailyMission;
+use App\Models\UserCheckin;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -163,12 +164,114 @@ class GamificationController extends Controller
         $allMissionsCompleted = $completedMissionsCount === count($missionsDef);
         $bonusClaimed = (bool) ($userMissions->get('bonus_box')?->is_completed);
 
-        // 4. Cerita / Dongeng yang Terbuka
+        // 4. Cerita / Dongeng yang Terbuka & Selesai Diklaim
         // Dongeng 1 selalu terbuka gratis secara default
         $unlockedStoryIds = UserUnlockedStory::where('user_id', $user->id)->pluck('story_id')->toArray();
         if (!in_array(1, $unlockedStoryIds)) {
             $unlockedStoryIds[] = 1;
         }
+
+        // Daftar ID dongeng yang sudah selesai dibaca (klaim sekali seumur hidup)
+        $completedStoryIds = UserUnlockedStory::where('user_id', $user->id)
+            ->where('is_read', true)
+            ->pluck('story_id')
+            ->toArray();
+
+        // Reset streak jika kemarin tidak ada aktivitas sama sekali
+        if ($user->last_activity_at) {
+            $lastAct = Carbon::parse($user->last_activity_at)->startOfDay();
+            if ($lastAct->lt(Carbon::today()->subDay())) {
+                $user->streak = 0;
+                $user->save();
+            }
+        }
+
+        // Status check-in hari ini
+        $hasCheckedInToday = UserCheckin::where('user_id', $user->id)
+            ->where('checkin_date', Carbon::today()->toDateString())
+            ->exists();
+
+        // Tracker 7 hari harian (Jum, Sab, Min, Sen, Sel, Rab, Kam)
+        $pastCheckinDates = UserCheckin::where('user_id', $user->id)
+            ->where('checkin_date', '>=', Carbon::today()->subDays(6)->toDateString())
+            ->pluck('checkin_date')
+            ->toArray();
+
+        $dayNamesIndo = [
+            0 => 'Min',
+            1 => 'Sen',
+            2 => 'Sel',
+            3 => 'Rab',
+            4 => 'Kam',
+            5 => 'Jum',
+            6 => 'Sab',
+        ];
+
+        $weeklyTracker = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $d = Carbon::today()->subDays($i);
+            $dStr = $d->toDateString();
+            $weeklyTracker[] = [
+                'date' => $dStr,
+                'dayName' => $dayNamesIndo[$d->dayOfWeek],
+                'dayNumber' => $d->day,
+                'isToday' => $i === 0,
+                'isCheckedIn' => in_array($dStr, $pastCheckinDates),
+            ];
+        }
+
+        // Leaderboard Jawara Aksara berbasis STREAK terbanyak (Hanya Data Pengguna Asli Real-time)
+        $dbUsers = User::select(['id', 'name', 'streak', 'xp', 'level'])
+            ->orderByDesc('streak')
+            ->orderByDesc('xp')
+            ->get();
+
+        $rankedList = [];
+        $currentUserRank = null;
+        $currentUserEntry = null;
+
+        foreach ($dbUsers as $idx => $u) {
+            $rank = $idx + 1;
+            $badge = match ($rank) {
+                1 => '🥇 Jawara 1',
+                2 => '🥈 Jawara 2',
+                3 => '🥉 Jawara 3',
+                default => "#{$rank}",
+            };
+
+            $isCurrent = $u->id === $user->id;
+            $avatar = match ($rank) {
+                1 => '👑',
+                2 => '🥈',
+                3 => '🥉',
+                default => ($isCurrent ? '🦸‍♂️' : '⭐'),
+            };
+            if ($isCurrent) {
+                $avatar = '🦸‍♂️';
+            }
+
+            $item = [
+                'id' => $u->id,
+                'name' => $u->name,
+                'streak' => (int) $u->streak,
+                'xp' => (int) $u->xp,
+                'level' => (int) $u->level,
+                'avatar' => $avatar,
+                'is_current_user' => $isCurrent,
+                'rank' => $rank,
+                'badge' => $badge,
+                'streak_text' => "{$u->streak} hari beruntun",
+            ];
+
+            $rankedList[] = $item;
+
+            if ($isCurrent) {
+                $currentUserRank = $rank;
+                $currentUserEntry = $item;
+            }
+        }
+
+        $top3 = array_slice($rankedList, 0, 3);
 
         return [
             'user' => [
@@ -178,10 +281,12 @@ class GamificationController extends Controller
                 'coins' => $user->coins ?? 50,
                 'xp' => $user->xp ?? 0,
                 'level' => $user->level ?? 1,
-                'streak' => $user->streak ?? 1,
+                'streak' => $user->streak ?? 0,
+                'max_streak' => max((int) ($user->max_streak ?? 0), (int) $user->streak),
                 'current_level_xp' => $currentLevelXp,
                 'xp_to_next_level' => $xpToNextLevel,
                 'xp_percent' => $xpPercent,
+                'completed_stories' => $completedStoryIds,
             ],
             'levels' => $levels,
             'completedLevelsCount' => count(array_filter($levels, fn ($l) => $l['status'] === 'completed')),
@@ -190,7 +295,94 @@ class GamificationController extends Controller
             'allMissionsCompleted' => $allMissionsCompleted,
             'bonusClaimed' => $bonusClaimed,
             'unlockedStoryIds' => $unlockedStoryIds,
+            'completedStoryIds' => $completedStoryIds,
+            'streakData' => [
+                'currentStreak' => (int) $user->streak,
+                'maxStreak' => max((int) ($user->max_streak ?? 0), (int) $user->streak),
+                'hasCheckedInToday' => $hasCheckedInToday,
+                'lastActivityAt' => $user->last_activity_at,
+                'weeklyTracker' => $weeklyTracker,
+            ],
+            'leaderboard' => [
+                'top3' => $top3,
+                'currentUser' => $currentUserEntry,
+                'isInTop3' => $currentUserRank !== null && $currentUserRank <= 3,
+            ],
         ];
+    }
+
+    /**
+     * Helper: Catat Check-in Harian & Perbarui Runtutan Belajar (Streak)
+     */
+    public static function recordDailyCheckin(User $user, string $type = 'auto'): array
+    {
+        $today = Carbon::today();
+        $todayStr = $today->toDateString();
+
+        $existing = UserCheckin::where('user_id', $user->id)
+            ->where('checkin_date', $todayStr)
+            ->first();
+
+        $isNewCheckin = false;
+        $message = '';
+
+        if (!$existing) {
+            UserCheckin::create([
+                'user_id' => $user->id,
+                'checkin_date' => $todayStr,
+                'checkin_type' => $type,
+            ]);
+            $isNewCheckin = true;
+
+            $lastActivity = $user->last_activity_at ? Carbon::parse($user->last_activity_at)->startOfDay() : null;
+
+            if (is_null($lastActivity)) {
+                $user->streak = 1;
+            } elseif ($lastActivity->equalTo($today)) {
+                // Streak tetap
+            } elseif ($lastActivity->equalTo($today->copy()->subDay())) {
+                $user->streak += 1;
+            } else {
+                $user->streak = 1;
+            }
+
+            $user->last_activity_at = $todayStr;
+            $user->max_streak = max((int) ($user->max_streak ?? 0), (int) $user->streak);
+
+            if ($type === 'manual') {
+                $user->xp += 10;
+                $user->coins += 5;
+                $message = "Check-in harian berhasil! (+10 XP & +5 🪙) Api belajarmu tetap menyala! 🔥";
+            } else {
+                $message = "Check-in harian otomatis tercatat! Runtutan: {$user->streak} hari! 🔥";
+            }
+
+            $user->save();
+        } else {
+            $message = "Kamu sudah check-in hari ini! Ritme belajarmu terjaga.";
+        }
+
+        return [
+            'isNewCheckin' => $isNewCheckin,
+            'streak' => $user->streak,
+            'message' => $message,
+        ];
+    }
+
+    /**
+     * Endpoint API: Check-in Manual dari Modal Runtutan Belajar
+     */
+    public function checkIn(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        $result = self::recordDailyCheckin($user, 'manual');
+
+        return response()->json([
+            'success' => true,
+            'isNewCheckin' => $result['isNewCheckin'],
+            'message' => $result['message'],
+            'state' => self::getGamificationState($user),
+        ]);
     }
 
     /**
@@ -280,6 +472,12 @@ class GamificationController extends Controller
                 $user->coins += $missionCoinBonus;
                 $messages[] = "Misi Harian 'Selesaikan 1 Level' selesai! (+{$missionCoinBonus} 🪙)";
             }
+
+            // Otomatisasi Check-in Harian (Aktivitas Belajar)
+            $checkinRes = self::recordDailyCheckin($user, 'auto_quiz');
+            if ($checkinRes['isNewCheckin']) {
+                $messages[] = $checkinRes['message'];
+            }
         }
 
         // Hitung level baru
@@ -339,6 +537,12 @@ class GamificationController extends Controller
             $messages[] = "Misi Harian 'Latihan Nulis di Canvas' selesai! (+{$missionCoinBonus} 🪙)";
         }
 
+        // Otomatisasi Check-in Harian (Aktivitas Belajar)
+        $checkinRes = self::recordDailyCheckin($user, 'auto_canvas');
+        if ($checkinRes['isNewCheckin']) {
+            $messages[] = $checkinRes['message'];
+        }
+
         // Cek Level Up
         $newLevel = max(1, (int) floor($user->xp / self::XP_PER_LEVEL) + 1);
         if ($newLevel > $user->level) {
@@ -368,23 +572,39 @@ class GamificationController extends Controller
 
         $user = Auth::user();
         $storyId = (int) $request->story_id;
-        $today = Carbon::today()->toDateString();
+        $messages = [];
 
+        // Cek apakah dongeng ini sudah pernah dibaca dan diklaim hadiahnya
+        $storyRecord = UserUnlockedStory::firstOrNew([
+            'user_id' => $user->id,
+            'story_id' => $storyId,
+        ]);
+
+        $alreadyClaimed = (bool) $storyRecord->is_read;
+
+        if ($alreadyClaimed) {
+            // Sudah pernah klaim, tidak beri XP dan koin lagi
+            return response()->json([
+                'success' => true,
+                'alreadyClaimed' => true,
+                'xpEarned' => 0,
+                'coinsEarned' => 0,
+                'messages' => ['Dongeng ini sudah selesai dibaca sebelumnya. Hadiah sudah pernah diklaim! 👍'],
+                'state' => self::getGamificationState($user),
+            ]);
+        }
+
+        // Klaim Pertama Kali: Berikan hadiah XP dan Koin Budaya
         $xpEarned = 50;
         $coinsEarned = 10;
         $user->xp += $xpEarned;
         $user->coins += $coinsEarned;
 
-        $messages = [];
-
-        // Simpan riwayat baca
-        $storyRecord = UserUnlockedStory::firstOrNew([
-            'user_id' => $user->id,
-            'story_id' => $storyId,
-        ]);
         $storyRecord->is_read = true;
         $storyRecord->read_at = now();
         $storyRecord->save();
+
+        $messages[] = "Selamat! Kamu menyelesaikan dongeng ini dan mendapatkan +{$xpEarned} XP & +{$coinsEarned} 🪙!";
 
         // Otomatisasi Misi Harian 3: Baca 1 Cerita Dongeng Sunda
         $mission = UserDailyMission::firstOrNew([
@@ -401,6 +621,12 @@ class GamificationController extends Controller
             $missionCoinBonus = 25;
             $user->coins += $missionCoinBonus;
             $messages[] = "Misi Harian 'Baca 1 Dongeng Sunda' selesai! (+{$missionCoinBonus} 🪙)";
+        }
+
+        // Otomatisasi Check-in Harian (Aktivitas Belajar)
+        $checkinRes = self::recordDailyCheckin($user, 'auto_story');
+        if ($checkinRes['isNewCheckin']) {
+            $messages[] = $checkinRes['message'];
         }
 
         // Cek Level Up

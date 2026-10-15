@@ -12,6 +12,10 @@ const props = defineProps({
         type: String,
         default: 'ᮊ',
     },
+    display: {
+        type: String,
+        default: '',
+    },
     latin: {
         type: String,
         default: 'Ka',
@@ -20,18 +24,24 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'xpGained', 'gamificationUpdated']);
 
+const renderText = computed(() => {
+    return props.display || props.character;
+});
+
 // ─── DICTIONARY CONFIG HURUF (CHARACTER_CONFIGS) ───
 // Vokal sederhana -> paddingStroke: 10
-// Konsonan -> paddingStroke: 12 (zona toleransi coretan anak SD)
+// Konsonan & Angka -> paddingStroke: 12 (zona toleransi coretan anak SD)
+// Rarangkén -> paddingStroke: 14
 const CHARACTER_CONFIGS = {
-    // Vokal Sederhana (Swara)
+    // 1. Vokal Mandiri (Swara)
     'ᮃ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
     'ᮄ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
     'ᮅ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
     'ᮈ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
     'ᮇ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
     'ᮉ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
-    // Konsonan (Ngalagena)
+    'ᮆ': { fontSize: 130, paddingStroke: 10, offsetY: 0 },
+    // 2. Konsonan Utama & Serapan (Ngalagena)
     'ᮊ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
     'ᮌ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
     'ᮍ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
@@ -50,9 +60,25 @@ const CHARACTER_CONFIGS = {
     'ᮛ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
     'ᮜ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
     'ᮝ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮖ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮗ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮐ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮋ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    'ᮮ': { fontSize: 125, paddingStroke: 12, offsetY: 2 },
+    // 3. Aksara Angka (Wilangan 0-9)
+    '᮰': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮱': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮲': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮳': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮴': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮵': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮶': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮷': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮸': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
+    '᮹': { fontSize: 120, paddingStroke: 12, offsetY: 0 },
 };
 
-const DEFAULT_CONFIG = { fontSize: 125, paddingStroke: 12, offsetY: 0 };
+const DEFAULT_CONFIG = { fontSize: 120, paddingStroke: 13, offsetY: 0 };
 
 const currentConfig = computed(() => {
     return CHARACTER_CONFIGS[props.character] || DEFAULT_CONFIG;
@@ -186,9 +212,9 @@ function validateStroke() {
     const targetY = (height / 2) + config.offsetY;
 
     // 1. Fill solid character body
-    maskCtx.fillText(props.character, targetX, targetY);
+    maskCtx.fillText(renderText.value, targetX, targetY);
     // 2. Stroke outer tolerance boundary with paddingStroke
-    maskCtx.strokeText(props.character, targetX, targetY);
+    maskCtx.strokeText(renderText.value, targetX, targetY);
 
     const maskData = maskCtx.getImageData(0, 0, width, height).data;
 
@@ -320,7 +346,7 @@ watch(() => props.show, (newVal) => {
                 <div class="flex items-center justify-center gap-3">
                     <h2 class="text-2xl font-black text-gray-900 flex items-center gap-2">
                         <span>Huruf "{{ latin }}"</span>
-                        <span class="text-3xl text-[#FF4D30]">{{ character }}</span>
+                        <span class="text-3xl text-[#FF4D30]">{{ renderText }}</span>
                     </h2>
                     <!-- Audio Pronunciation Button -->
                     <button
@@ -348,7 +374,7 @@ watch(() => props.show, (newVal) => {
                             class="font-bold text-orange-200/60 leading-none select-none"
                             :style="{ fontSize: `${currentConfig.fontSize}px` }"
                         >
-                            {{ character }}
+                            {{ renderText }}
                         </span>
                     </div>
 
