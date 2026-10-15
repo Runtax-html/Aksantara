@@ -98,7 +98,7 @@ Aksantara memiliki 5 pilar modul fungsional di halaman utama dashboard:
    - Peringkat murni berbasis data database riil diurutkan berdasarkan `streak DESC`, kemudian `xp DESC`.
    - Tidak menggunakan data tiruan (dummy mock).
 
----
+--- 
 
 ## 4. Kriteria Keberhasilan Teknis (Acceptance Criteria)
 
